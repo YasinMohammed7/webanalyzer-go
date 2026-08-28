@@ -1,0 +1,93 @@
+{
+  "host": "http://r-gol.com",
+  "matches": [
+    {
+      "app": {
+        "cats": [
+          "31"
+        ],
+        "category_names": [
+          "CDN"
+        ],
+        "cookies": {
+          "__cfduid": ""
+        },
+        "headers": {
+          "Server": "^cloudflare$",
+          "cf-cache-status": "",
+          "cf-ray": ""
+        },
+        "meta": {
+          "image": [
+            "//cdn\\.cloudflare"
+          ]
+        },
+        "html": [
+          ""
+        ],
+        "scripts": [
+          ""
+        ],
+        "url": [
+          ""
+        ],
+        "website": "https://www.cloudflare.com",
+        "implies": [
+          ""
+        ]
+      },
+      "app_name": "Cloudflare",
+      "matches": [
+        [
+          "a312991caa9164c5-SOF"
+        ],
+        [
+          "cloudflare"
+        ],
+        [
+          "DYNAMIC"
+        ]
+      ],
+      "version": ""
+    },
+    {
+      "app": {
+        "cats": [
+          "19"
+        ],
+        "category_names": [
+          "Miscellaneous"
+        ],
+        "cookies": null,
+        "headers": {
+          "Alt-Svc": "h3",
+          "X-Firefox-Http3": "h3"
+        },
+        "meta": null,
+        "html": [
+          ""
+        ],
+        "scripts": [
+          ""
+        ],
+        "url": [
+          ""
+        ],
+        "website": "https://httpwg.org/",
+        "implies": [
+          ""
+        ]
+      },
+      "app_name": "HTTP/3",
+      "matches": [
+        [
+          "h3"
+        ]
+      ],
+      "version": ""
+    }
+  ],
+  "duration": 358487292,
+  "seconds": 0.358487292,
+  "error": null
+}
