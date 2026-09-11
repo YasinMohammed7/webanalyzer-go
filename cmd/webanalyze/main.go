@@ -46,7 +46,6 @@ func init() {
 }
 
 func main() {
-	type RowType struct{}
 	var (
 		file     io.ReadCloser
 		err      error
@@ -65,7 +64,7 @@ func main() {
 	}
 
 	if update {
-		err = webanalyze.DownloadFile("categories.json", "technologies.json")
+		err = webanalyze.DownloadFile("categories.json", "technologies.json", "groups.json")
 		if err != nil {
 			log.Fatalf("error: can not update apps file: %v", err)
 		}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,12 +98,12 @@ func (wa *WebAnalyzer) Process(job *Job) (Result, []string) {
 	return res, links
 }
 
-func (wa *WebAnalyzer) CategoryById(cid string) string {
-	if _, ok := wa.appDefs.Cats[cid]; !ok {
+func (wa *WebAnalyzer) CategoryById(cid int) string {
+	if _, ok := wa.appDefs.Cats[strconv.Itoa(cid)]; !ok {
 		return ""
 	}
 
-	return wa.appDefs.Cats[cid].Name
+	return wa.appDefs.Cats[strconv.Itoa(cid)].Name
 }
 
 func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
