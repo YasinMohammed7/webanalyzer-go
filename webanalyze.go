@@ -32,22 +32,37 @@ type Result struct {
 
 // Match type encapsulates the App information from a match on a document
 type Match struct {
-	App     `json:"app"`
-	AppName string     `json:"app_name"`
-	Matches [][]string `json:"matches"`
-	Version string     `json:"version"`
+	App               `json:"app"`
+	AppName           string     `json:"app_name"`
+	Matches           [][]string `json:"matches"`
+	Version           string     `json:"version"`
+	Confidence        int        `json:"confidence"`
+	versionConfidence int
 }
 
 // WebAnalyzer types holds an analyzation job
 type WebAnalyzer struct {
-	appDefs   *AppsDefinition
+	appDefs   AppsDefinition
+	catDefs   CategoriesDefinition
 	scheduler chan *Job
 	client    *http.Client
 }
 
-func (m *Match) updateVersion(version string) {
-	if version != "" {
+func (m *Match) updateVersion(version string, confidence int) {
+
+	if version == "" {
+		return
+	}
+	if m.Version == "" || confidence > m.versionConfidence {
 		m.Version = version
+		m.versionConfidence = confidence
+	}
+
+}
+
+func (m *Match) updateConfidence(confidence int) {
+	if confidence > m.Confidence {
+		m.Confidence = confidence
 	}
 }
 
@@ -99,11 +114,11 @@ func (wa *WebAnalyzer) Process(job *Job) (Result, []string) {
 }
 
 func (wa *WebAnalyzer) CategoryById(cid int) string {
-	if _, ok := wa.appDefs.Cats[strconv.Itoa(cid)]; !ok {
+	if _, ok := wa.catDefs[strconv.Itoa(cid)]; !ok {
 		return ""
 	}
 
-	return wa.appDefs.Cats[strconv.Itoa(cid)].Name
+	return wa.catDefs[strconv.Itoa(cid)].Name
 }
 
 func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
@@ -215,7 +230,7 @@ func isSubdomain(base, u *url.URL) bool {
 }
 
 // do http request and analyze response
-func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []string, error) {
+func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []string, error) {
 	var apps = make([]Match, 0)
 	var err error
 
@@ -278,9 +293,9 @@ func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []st
 		}
 	}
 
-	scripts := doc.Find("script")
+	scriptsElements := doc.Find("script")
 
-	for appname, app := range appDefs.Apps {
+	for appname, app := range appDefs {
 		// TODO: Reduce complexity in this for-loop by functionalising out
 		// the sub-loops and checks.
 
@@ -291,28 +306,32 @@ func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []st
 		}
 
 		// check raw html
-		if m, v := findMatches(string(body), app.HTMLRegex); len(m) > 0 {
+		if m, v, c := findMatches(string(body), app.HTMLRegex); len(m) > 0 {
 			findings.Matches = append(findings.Matches, m...)
-			findings.updateVersion(v)
+			findings.updateConfidence(c)
+			findings.updateVersion(v, c)
 		}
 
 		// check response header
-		headerFindings, version := app.FindInHeaders(headers)
+		headerFindings, version, confidence := app.FindInHeaders(headers)
 		findings.Matches = append(findings.Matches, headerFindings...)
-		findings.updateVersion(version)
+		findings.updateConfidence(confidence)
+		findings.updateVersion(version, confidence)
 
 		// check url
-		if m, v := findMatches(job.URL, app.URLRegex); len(m) > 0 {
+		if m, v, c := findMatches(job.URL, app.URLRegex); len(m) > 0 {
 			findings.Matches = append(findings.Matches, m...)
-			findings.updateVersion(v)
+			findings.updateConfidence(c)
+			findings.updateVersion(v, c)
 		}
 
 		// check script tags
-		scripts.Each(func(i int, s *goquery.Selection) {
+		scriptsElements.Each(func(i int, s *goquery.Selection) {
 			if script, exists := s.Attr("src"); exists {
-				if m, v := findMatches(script, app.ScriptRegex); len(m) > 0 {
+				if m, v, c := findMatches(script, app.ScriptSrcRegex); len(m) > 0 {
 					findings.Matches = append(findings.Matches, m...)
-					findings.updateVersion(v)
+					findings.updateConfidence(c)
+					findings.updateVersion(v, c)
 				}
 			}
 		})
@@ -322,9 +341,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []st
 			selector := fmt.Sprintf("meta[name='%s']", h.Name)
 			doc.Find(selector).Each(func(i int, s *goquery.Selection) {
 				content, _ := s.Attr("content")
-				if m, v := findMatches(content, []AppRegexp{h}); len(m) > 0 {
+				if m, v, c := findMatches(content, []AppRegexp{h}); len(m) > 0 {
 					findings.Matches = append(findings.Matches, m...)
-					findings.updateVersion(v)
+					findings.updateConfidence(c)
+					findings.updateVersion(v, c)
 				}
 			})
 		}
@@ -338,13 +358,15 @@ func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []st
 				if c.Regexp != nil {
 
 					// only match single AppRegexp on this specific cookie
-					if m, v := findMatches(cookiesMap[c.Name], []AppRegexp{c}); len(m) > 0 {
+					if m, v, c := findMatches(cookiesMap[c.Name], []AppRegexp{c}); len(m) > 0 {
 						findings.Matches = append(findings.Matches, m...)
-						findings.updateVersion(v)
+						findings.updateConfidence(c)
+						findings.updateVersion(v, c)
 					}
 
 				} else {
 					findings.Matches = append(findings.Matches, []string{c.Name})
+					findings.updateConfidence(c.Confidence)
 				}
 			}
 
@@ -353,16 +375,12 @@ func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []st
 		if len(findings.Matches) > 0 {
 			apps = append(apps, findings)
 
-			// handle implies
-			for _, implies := range app.Implies {
-				for implyAppname, implyApp := range appDefs.Apps {
-					if implies != implyAppname {
-						continue
-					}
+			for _, impliedName := range app.Implies {
 
+				if impliedApp, ok := appDefs[impliedName]; ok {
 					f2 := Match{
-						App:     implyApp,
-						AppName: implyAppname,
+						App:     impliedApp,
+						AppName: impliedName,
 						Matches: make([][]string, 0),
 					}
 					apps = append(apps, f2)
@@ -376,44 +394,46 @@ func (wa *WebAnalyzer) process(job *Job, appDefs *AppsDefinition) ([]Match, []st
 }
 
 // runs a list of regexes on content
-func findMatches(content string, regexes []AppRegexp) ([][]string, string) {
+func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) {
 	var m [][]string
 	var version string
+	var confidence int
 
 	for _, r := range regexes {
 		matches := r.Regexp.FindAllStringSubmatch(content, -1)
-		if matches == nil {
+		if len(matches) == 0 {
 			continue
 		}
 
 		m = append(m, matches...)
 
 		if r.Version != "" {
-			version = findVersion(m, r.Version)
+			version = findVersion(matches, r.Version)
 		}
 
+		if r.Confidence > confidence {
+			confidence = r.Confidence
+		}
 	}
-	return m, version
+	return m, version, confidence
 }
 
 // parses a version against matches
 func findVersion(matches [][]string, version string) string {
-	var v string
-
 	for _, matchPair := range matches {
-		// replace backtraces (max: 3)
-		for i := 1; i <= 3; i++ {
-			bt := fmt.Sprintf("\\%v", i)
-			if strings.Contains(version, bt) && len(matchPair) >= i {
-				v = strings.Replace(version, bt, matchPair[i], 1)
+		v := version
+
+		for i := 1; i < len(matchPair); i++ {
+			bt := fmt.Sprintf("\\%d", i)
+
+			if strings.Contains(v, bt) {
+				v = strings.ReplaceAll(v, bt, matchPair[i])
 			}
 		}
 
-		// return first found version
-		if v != "" {
+		if v != version {
 			return v
 		}
-
 	}
 
 	return ""

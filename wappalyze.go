@@ -66,15 +66,15 @@ type Category struct {
 }
 
 // AppsDefinition type encapsulates the json encoding of the whole technologies.json file
-type AppsDefinition struct {
-	Apps map[string]App      `json:"technologies"`
-	Cats map[string]Category `json:"categories"`
-}
+type AppsDefinition map[string]App
+
+type CategoriesDefinition map[string]Category
 
 type AppRegexp struct {
-	Name    string
-	Regexp  *regexp.Regexp
-	Version string
+	Name       string
+	Regexp     *regexp.Regexp
+	Version    string
+	Confidence int
 }
 
 type DOMKind uint8
@@ -163,8 +163,9 @@ func (t *IntArray) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("expected int or []int, got %s", string(data))
 }
 
-func (app *App) FindInHeaders(headers http.Header) (matches [][]string, version string) {
+func (app *App) FindInHeaders(headers http.Header) (matches [][]string, version string, confidence int) {
 	var v string
+	var c int
 
 	for _, hre := range app.HeaderRegex {
 		if headers.Get(hre.Name) == "" {
@@ -175,13 +176,14 @@ func (app *App) FindInHeaders(headers http.Header) (matches [][]string, version 
 			if headerValue == "" {
 				continue
 			}
-			if m, version := findMatches(headerValue, []AppRegexp{hre}); len(m) > 0 {
+			if m, version, confidence := findMatches(headerValue, []AppRegexp{hre}); len(m) > 0 {
 				matches = append(matches, m...)
 				v = version
+				c = confidence
 			}
 		}
 	}
-	return matches, v
+	return matches, v, c
 }
 
 func downloadGroups() (map[string]Group, error) {
@@ -343,27 +345,20 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		return err
 	}
 
-	for key, value := range wa.appDefs.Apps {
+	for key, value := range wa.appDefs {
 
-		app := wa.appDefs.Apps[key]
+		app := wa.appDefs[key]
 
 		app.HTMLRegex = compileRegexes(value.HTML)
 		app.ScriptRegex = compileRegexes(value.Scripts)
+		app.ScriptSrcRegex = compileRegexes(value.ScriptSrc)
 		app.URLRegex = compileRegexes(value.URL)
 
 		app.HeaderRegex = compileNamedRegexes(app.Headers)
 		app.CookieRegex = compileNamedRegexes(app.Cookies)
-		// app.MetaRegex = compileNamedRegexes(app.Meta)
+		app.MetaRegex = compileNamedRegexArrays(app.Meta)
 
-		app.CatNames = make(StringArray, 0)
-
-		for _, cid := range app.Cats {
-			if category, ok := wa.appDefs.Cats[strconv.Itoa(cid)]; ok && category.Name != "" {
-				app.CatNames = append(app.CatNames, category.Name)
-			}
-		}
-
-		wa.appDefs.Apps[key] = app
+		wa.appDefs[key] = app
 
 	}
 
@@ -371,66 +366,87 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 }
 
 func compileNamedRegexes(from map[string]string) []AppRegexp {
-
 	var list []AppRegexp
 
 	for key, value := range from {
-
-		h := AppRegexp{
-			Name: key,
-		}
-
-		if value == "" {
-			value = ".*"
-		}
-
-		// Filter out webapplyzer attributes from regular expression
-		splitted := strings.Split(value, "\\;")
-
-		r, err := regexp.Compile("(?i)" + splitted[0])
-		if err != nil {
+		appRegexp, ok := compileAppRegexp(key, value)
+		if !ok {
 			continue
 		}
 
-		if len(splitted) > 1 && strings.HasPrefix(splitted[1], "version:") {
-			h.Version = splitted[1][8:]
-		}
-
-		h.Regexp = r
-		list = append(list, h)
+		list = append(list, appRegexp)
 	}
 
 	return list
 }
 
-func compileRegexes(s StringArray) []AppRegexp {
+func compileRegexes(values StringArray) []AppRegexp {
 	var list []AppRegexp
 
-	for _, regexString := range s {
+	for _, value := range values {
 
-		if regexString == "" {
+		appRegexp, ok := compileAppRegexp("", value)
+		if !ok {
 			continue
 		}
 
-		// Split version detection
-		splitted := strings.Split(regexString, "\\;")
+		list = append(list, appRegexp)
+	}
 
-		regex, err := regexp.Compile("(?i)" + splitted[0])
-		if err != nil {
-			log.Printf("warning: failed to compile regex %q: %v", regexString, err)
-			continue
-		} else {
-			rv := AppRegexp{
-				Regexp: regex,
+	return list
+}
+
+func compileNamedRegexArrays(from map[string]StringArray) []AppRegexp {
+	var list []AppRegexp
+
+	for key, values := range from {
+		for _, value := range values {
+			appRegexp, ok := compileAppRegexp(key, value)
+			if !ok {
+				continue
 			}
 
-			if len(splitted) > 1 && strings.HasPrefix(splitted[0], "version") {
-				rv.Version = splitted[1][8:]
-			}
-
-			list = append(list, rv)
+			list = append(list, appRegexp)
 		}
 	}
 
 	return list
+}
+
+// helper regex function to find matches in a string and return the version if applicable
+func compileAppRegexp(name, value string) (AppRegexp, bool) {
+	if value == "" {
+		value = ".*"
+	}
+
+	parts := strings.Split(value, "\\;")
+
+	r, err := regexp.Compile("(?i)" + parts[0])
+	if err != nil {
+		log.Printf("warning: failed to compile regex %q: %v", value, err)
+		return AppRegexp{}, false
+	}
+
+	appRegexp := AppRegexp{
+		Name:       name,
+		Regexp:     r,
+		Confidence: 100,
+	}
+
+	for _, attr := range parts[1:] {
+		switch {
+		case strings.HasPrefix(attr, "version:"):
+			appRegexp.Version = strings.TrimPrefix(attr, "version:")
+
+		case strings.HasPrefix(attr, "confidence:"):
+			confidence, err := strconv.Atoi(
+				strings.TrimPrefix(attr, "confidence:"),
+			)
+			if err == nil {
+				appRegexp.Confidence = confidence
+			}
+		}
+	}
+
+	return appRegexp, true
 }
