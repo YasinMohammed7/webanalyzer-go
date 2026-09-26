@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/bobesa/go-domain-util v0.0.0-20250410211237-17ab3b2f4a95
+	github.com/dlclark/regexp2/v2 v2.8.0
 )
 
 require (

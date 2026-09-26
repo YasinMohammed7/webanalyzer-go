@@ -137,7 +137,7 @@ func main() {
 
 	appsInfo, err := os.Stat(techsFilename)
 	if err != nil {
-		log.Fatalf("error: cant open %v: %v", techsFilename, err)
+		log.Fatalf("cannot stat %v: %v", techsFilename, err)
 	}
 
 	if appsInfo.ModTime().Before(time.Now().Add(24 * time.Hour * 7 * -1)) {

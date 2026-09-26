@@ -8,9 +8,10 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/dlclark/regexp2/v2"
 )
 
 const WappazlyerRoot = "https://raw.githubusercontent.com/enthec/webappanalyzer/main/src"
@@ -24,7 +25,7 @@ type App struct {
 	CPE              string                 `json:"cpe,omitempty"`
 	Cookies          map[string]string      `json:"cookies,omitempty"`
 	JS               map[string]string      `json:"js,omitempty"`
-	DOM              DOM                    `json:"dom,omitempty"`
+	DOM              *DOM                   `json:"dom,omitempty"`
 	DNS              map[string]StringArray `json:"dns,omitempty"`
 	Headers          map[string]string      `json:"headers,omitempty"`
 	HTML             StringArray            `json:"html,omitempty"`
@@ -72,7 +73,7 @@ type CategoriesDefinition map[string]Category
 
 type AppRegexp struct {
 	Name       string
-	Regexp     *regexp.Regexp
+	Regexp     *regexp2.Regexp
 	Version    string
 	Confidence int
 }
@@ -96,7 +97,7 @@ type DOMRule struct {
 type DOM struct {
 	Kind  DOMKind
 	Value string
-	Array StringArray
+	Array []string
 	Rules map[string]DOMRule
 }
 
@@ -107,26 +108,44 @@ type Group struct {
 type StringArray []string
 
 func (d *DOM) UnmarshalJSON(data []byte) error {
-
 	var value string
 	if err := json.Unmarshal(data, &value); err == nil {
 		d.Kind = DOMKindString
 		d.Value = value
 		return nil
 	}
-	var array StringArray
+
+	var array []string
 	if err := json.Unmarshal(data, &array); err == nil {
 		d.Kind = DOMKindArray
 		d.Array = array
 		return nil
 	}
+
 	var rules map[string]DOMRule
 	if err := json.Unmarshal(data, &rules); err == nil {
 		d.Kind = DOMKindRules
 		d.Rules = rules
 		return nil
 	}
-	return fmt.Errorf("invalid dom value")
+
+	return fmt.Errorf("invalid dom value: %s", string(data))
+}
+
+func (d DOM) MarshalJSON() ([]byte, error) {
+
+	switch d.Kind {
+	case DOMKindString:
+		return json.Marshal(d.Value)
+	case DOMKindArray:
+		return json.Marshal(d.Array)
+	case DOMKindRules:
+		return json.Marshal(d.Rules)
+	case DOMKindNone:
+		return []byte("null"), nil
+	default:
+		return nil, fmt.Errorf("invalid DOM kind: %d", d.Kind)
+	}
 
 }
 
@@ -413,6 +432,11 @@ func compileNamedRegexArrays(from map[string]StringArray) []AppRegexp {
 	return list
 }
 
+func normalizeRegex(pattern string) string {
+	pattern = strings.ReplaceAll(pattern, `\_`, `_`)
+	return pattern
+}
+
 // helper regex function to find matches in a string and return the version if applicable
 func compileAppRegexp(name, value string) (AppRegexp, bool) {
 	if value == "" {
@@ -421,7 +445,9 @@ func compileAppRegexp(name, value string) (AppRegexp, bool) {
 
 	parts := strings.Split(value, "\\;")
 
-	r, err := regexp.Compile("(?i)" + parts[0])
+	pattern := normalizeRegex(parts[0])
+
+	r, err := regexp2.Compile(pattern, regexp2.IgnoreCase)
 	if err != nil {
 		log.Printf("warning: failed to compile regex %q: %v", value, err)
 		return AppRegexp{}, false

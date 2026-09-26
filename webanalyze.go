@@ -130,13 +130,12 @@ func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
 				Proxy:           http.ProxyFromEnvironment,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				url, err := url.Parse(urlStr)
+				baseURL, err := url.Parse(urlStr)
 				if err != nil {
 					return http.ErrUseLastResponse
 				}
 
-				// allow redirects from http -> https on the same host
-				if url.Hostname() != req.URL.Hostname() {
+				if !isSubdomain(baseURL, req.URL) {
 					return http.ErrUseLastResponse
 				}
 
@@ -151,6 +150,9 @@ func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
 	req.Header.Add("Accept", "*/*")
 
 	resp, err := client.Do(req)
+	fmt.Println("STATUS:", resp.StatusCode)
+	fmt.Println("FINAL URL:", resp.Request.URL.String())
+	fmt.Println("LOCATION:", resp.Header.Get("Location"))
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +242,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	var headers http.Header
 	var links []string
 
+	baseURL, err := url.Parse(job.URL)
+	if err != nil {
+		return nil, links, fmt.Errorf("invalid URL %q: %w", job.URL, err)
+	}
+
 	// get response from host if allowed
 	if job.forceNotDownload {
 		body = job.Body
@@ -254,21 +261,22 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		defer resp.Body.Close()
 
 		body, err = io.ReadAll(resp.Body)
-		if err == nil {
-			headers = resp.Header
-			if job.followRedirect {
-				for k, v := range resp.Header {
-					if k == "Location" {
-						base, _ := url.Parse(job.URL)
-						u := resolveLink(base, v[0], job.SearchSubdomain)
-						if u != "" {
-							links = append(links, v[0])
-						}
-					}
+		if err != nil {
+			return nil, links, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		headers = resp.Header
+
+		if job.followRedirect {
+			if location := resp.Header.Get("Location"); location != "" {
+
+				if u := resolveLink(baseURL, location, job.SearchSubdomain); u != "" {
+					links = append(links, u)
 				}
 			}
-			cookies = resp.Cookies()
 		}
+
+		cookies = resp.Cookies()
 	}
 
 	for _, c := range cookies {
@@ -282,9 +290,8 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	// handle crawling
 	if job.Crawl > 0 {
-		base, _ := url.Parse(job.URL)
 
-		for c, link := range parseLinks(doc, base, job.SearchSubdomain) {
+		for c, link := range parseLinks(doc, baseURL, job.SearchSubdomain) {
 			if c >= job.Crawl {
 				break
 			}
@@ -293,7 +300,31 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 	}
 
-	scriptsElements := doc.Find("script")
+	var scriptSources []string
+
+	doc.Find("script[src]").Each(func(_ int, s *goquery.Selection) {
+		if src, exists := s.Attr("src"); exists {
+			scriptSources = append(scriptSources, src)
+		}
+	})
+
+	metaTags := make(map[string][]string)
+
+	doc.Find("meta").Each(func(_ int, s *goquery.Selection) {
+		name, exists := s.Attr("name")
+		if !exists {
+			return
+		}
+
+		content, exists := s.Attr("content")
+		if !exists {
+			return
+		}
+
+		name = strings.ToLower(strings.TrimSpace(name))
+
+		metaTags[name] = append(metaTags[name], content)
+	})
 
 	for appname, app := range appDefs {
 		// TODO: Reduce complexity in this for-loop by functionalising out
@@ -305,8 +336,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			Matches: make([][]string, 0),
 		}
 
+		html := string(body)
+
 		// check raw html
-		if m, v, c := findMatches(string(body), app.HTMLRegex); len(m) > 0 {
+		if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
 			findings.Matches = append(findings.Matches, m...)
 			findings.updateConfidence(c)
 			findings.updateVersion(v, c)
@@ -326,47 +359,55 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 
 		// check script tags
-		scriptsElements.Each(func(i int, s *goquery.Selection) {
-			if script, exists := s.Attr("src"); exists {
-				if m, v, c := findMatches(script, app.ScriptSrcRegex); len(m) > 0 {
-					findings.Matches = append(findings.Matches, m...)
-					findings.updateConfidence(c)
-					findings.updateVersion(v, c)
-				}
+		for _, script := range scriptSources {
+			if m, v, c := findMatches(script, app.ScriptSrcRegex); len(m) > 0 {
+				findings.Matches = append(findings.Matches, m...)
+				findings.updateConfidence(c)
+				findings.updateVersion(v, c)
 			}
-		})
+		}
 
 		// check meta tags
-		for _, h := range app.MetaRegex {
-			selector := fmt.Sprintf("meta[name='%s']", h.Name)
-			doc.Find(selector).Each(func(i int, s *goquery.Selection) {
-				content, _ := s.Attr("content")
-				if m, v, c := findMatches(content, []AppRegexp{h}); len(m) > 0 {
-					findings.Matches = append(findings.Matches, m...)
-					findings.updateConfidence(c)
-					findings.updateVersion(v, c)
+		for _, metaRegex := range app.MetaRegex {
+			contents, ok := metaTags[strings.ToLower(metaRegex.Name)]
+			if !ok {
+				continue
+			}
+
+			for _, content := range contents {
+				matches, version, confidence := findMatches(
+					content,
+					[]AppRegexp{metaRegex},
+				)
+
+				if len(matches) == 0 {
+					continue
 				}
-			})
+
+				findings.Matches = append(findings.Matches, matches...)
+				findings.updateConfidence(confidence)
+				findings.updateVersion(version, confidence)
+			}
 		}
 
 		// check cookies
-		for _, c := range app.CookieRegex {
-			if _, ok := cookiesMap[c.Name]; ok {
+		for _, cookieRegex := range app.CookieRegex {
+			if _, ok := cookiesMap[cookieRegex.Name]; ok {
 
 				// if there is a regexp set, ensure it matches.
 				// otherwise just add this as a match
-				if c.Regexp != nil {
+				if cookieRegex.Regexp != nil {
 
 					// only match single AppRegexp on this specific cookie
-					if m, v, c := findMatches(cookiesMap[c.Name], []AppRegexp{c}); len(m) > 0 {
-						findings.Matches = append(findings.Matches, m...)
-						findings.updateConfidence(c)
-						findings.updateVersion(v, c)
+					if matches, version, confidence := findMatches(cookiesMap[cookieRegex.Name], []AppRegexp{cookieRegex}); len(matches) > 0 {
+						findings.Matches = append(findings.Matches, matches...)
+						findings.updateConfidence(confidence)
+						findings.updateVersion(version, confidence)
 					}
 
 				} else {
-					findings.Matches = append(findings.Matches, []string{c.Name})
-					findings.updateConfidence(c.Confidence)
+					findings.Matches = append(findings.Matches, []string{cookieRegex.Name})
+					findings.updateConfidence(cookieRegex.Confidence)
 				}
 			}
 
@@ -375,18 +416,18 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		if len(findings.Matches) > 0 {
 			apps = append(apps, findings)
 
-			for _, impliedName := range app.Implies {
+			// for _, impliedName := range app.Implies {
 
-				if impliedApp, ok := appDefs[impliedName]; ok {
-					f2 := Match{
-						App:     impliedApp,
-						AppName: impliedName,
-						Matches: make([][]string, 0),
-					}
-					apps = append(apps, f2)
-				}
+			// 	if impliedApp, ok := appDefs[impliedName]; ok {
+			// 		f2 := Match{
+			// 			App:     impliedApp,
+			// 			AppName: impliedName,
+			// 			Matches: make([][]string, 0),
+			// 		}
+			// 		apps = append(apps, f2)
+			// 	}
 
-			}
+			// }
 		}
 	}
 
@@ -400,7 +441,26 @@ func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) 
 	var confidence int
 
 	for _, r := range regexes {
-		matches := r.Regexp.FindAllStringSubmatch(content, -1)
+		var matches [][]string
+		match, err := r.Regexp.FindStringMatch(content)
+
+		if err != nil {
+			continue
+		}
+
+		for match != nil {
+			groups := match.Groups()
+			row := make([]string, 0, len(groups))
+			for _, group := range groups {
+				row = append(row, group.String())
+			}
+			matches = append(matches, row)
+			match, err = r.Regexp.FindNextMatch(match)
+			if err != nil {
+				break
+			}
+		}
+
 		if len(matches) == 0 {
 			continue
 		}
