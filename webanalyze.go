@@ -402,6 +402,12 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	links = parseLinks(doc, baseURL, job.SearchSubdomain)
 
+	textDoc := doc.Selection.Clone()
+
+	textDoc.Find("script, style, noscript").Remove()
+
+	pageText := strings.Join(strings.Fields(textDoc.Text()), " ")
+
 	var scriptSources []string
 
 	doc.Find("script[src]").Each(func(_ int, s *goquery.Selection) {
@@ -428,9 +434,9 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		metaTags[name] = append(metaTags[name], content)
 	})
 
+	html := string(body)
+
 	for appname, app := range appDefs {
-		// TODO: Reduce complexity in this for-loop by functionalising out
-		// the sub-loops and checks.
 
 		findings := Match{
 			App:        app,
@@ -438,8 +444,6 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			Matches:    make([][]string, 0),
 			Categories: wa.resolveCategories(app),
 		}
-
-		html := string(body)
 
 		// check raw html
 		if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
@@ -456,6 +460,12 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		// check url
 		if m, v, c := findMatches(job.URL, app.URLRegex); len(m) > 0 {
+			findings.Matches = append(findings.Matches, m...)
+			findings.updateConfidence(c)
+			findings.updateVersion(v, c)
+		}
+
+		if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
 			findings.Matches = append(findings.Matches, m...)
 			findings.updateConfidence(c)
 			findings.updateVersion(v, c)

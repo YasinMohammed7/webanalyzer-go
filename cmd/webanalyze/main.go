@@ -119,7 +119,9 @@ func main() {
 	defer file.Close()
 
 	var wg sync.WaitGroup
+	var collectorWG sync.WaitGroup
 	hosts := make(chan string)
+	resultCh := make(chan webanalyze.Result)
 
 	techsFile, err := os.Open(techsFilename)
 	if err != nil {
@@ -160,6 +162,26 @@ func main() {
 		log.Printf("warning: %v is older than a week", techsFilename)
 	}
 
+	technologyCount := make(map[string]int)
+
+	collectorWG.Go(func() {
+		for result := range resultCh {
+
+			output(result, wa, outWriter, outJsonWriter)
+
+			// deduplicate inside this result first
+			seen := make(map[string]struct{})
+
+			for _, tech := range result.Technologies {
+				seen[tech.AppName] = struct{}{}
+			}
+
+			for name := range seen {
+				technologyCount[name]++
+			}
+		}
+	})
+
 	for i := 0; i < workers; i++ {
 		wg.Go(func() {
 
@@ -170,11 +192,11 @@ func main() {
 					results := wa.Crawl(job)
 
 					for _, result := range results {
-						output(result, wa, outWriter, outJsonWriter)
+						resultCh <- result
 					}
 				} else {
 					result, _ := wa.Process(job)
-					output(result, wa, outWriter, outJsonWriter)
+					resultCh <- result
 				}
 			}
 
@@ -192,6 +214,16 @@ func main() {
 
 	close(hosts)
 	wg.Wait()
+	close(resultCh)
+	collectorWG.Wait()
+
+	fmt.Printf("\nTotal unique technologies: %d\n", len(technologyCount))
+
+	for name, count := range technologyCount {
+
+		fmt.Printf("%s: %d\n", name, count)
+
+	}
 
 }
 
