@@ -74,6 +74,7 @@ type CategoriesDefinition map[string]Category
 type AppRegexp struct {
 	Name       string
 	Regexp     *regexp2.Regexp
+	Pattern    string
 	Version    string
 	Confidence int
 }
@@ -104,6 +105,8 @@ type DOM struct {
 type Group struct {
 	Name string `json:"name"`
 }
+
+type GroupsDefinition map[string]Group
 
 type StringArray []string
 
@@ -384,6 +387,14 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 	return nil
 }
 
+func (wa *WebAnalyzer) loadCategories(r io.Reader) error {
+	return json.NewDecoder(r).Decode(&wa.catDefs)
+}
+
+func (wa *WebAnalyzer) loadGroups(r io.Reader) error {
+	return json.NewDecoder(r).Decode(&wa.groupDefs)
+}
+
 func compileNamedRegexes(from map[string]string) []AppRegexp {
 	var list []AppRegexp
 
@@ -457,6 +468,7 @@ func compileAppRegexp(name, value string) (AppRegexp, bool) {
 		Name:       name,
 		Regexp:     r,
 		Confidence: 100,
+		Pattern:    pattern,
 	}
 
 	for _, attr := range parts[1:] {

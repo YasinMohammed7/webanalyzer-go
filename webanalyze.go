@@ -23,20 +23,29 @@ var (
 
 // Result type encapsulates the result information from a given host
 type Result struct {
-	Host     string        `json:"host"`
-	Matches  []Match       `json:"matches"`
-	Duration time.Duration `json:"duration"`
-	Seconds  float64       `json:"seconds"`
-	Error    error         `json:"error"`
+	Host              string        `json:"host"`
+	FinalURL          string        `json:"final_url"`
+	Technologies      []Match       `json:"technologies"`
+	TechnologiesCount int           `json:"technologies_count"`
+	Duration          time.Duration `json:"duration"`
+	Seconds           float64       `json:"seconds"`
+	Error             error         `json:"error"`
+}
+
+type MatchCategory struct {
+	ID     uint32   `json:"id"`
+	Name   string   `json:"name"`
+	Groups []string `json:"groups"`
 }
 
 // Match type encapsulates the App information from a match on a document
 type Match struct {
+	AppName           string `json:"app_name"`
 	App               `json:"app"`
-	AppName           string     `json:"app_name"`
-	Matches           [][]string `json:"matches"`
-	Version           string     `json:"version"`
-	Confidence        int        `json:"confidence"`
+	Matches           [][]string      `json:"matches"`
+	Version           string          `json:"version"`
+	Confidence        int             `json:"confidence"`
+	Categories        []MatchCategory `json:"categories"`
 	versionConfidence int
 }
 
@@ -44,6 +53,7 @@ type Match struct {
 type WebAnalyzer struct {
 	appDefs   AppsDefinition
 	catDefs   CategoriesDefinition
+	groupDefs GroupsDefinition
 	scheduler chan *Job
 	client    *http.Client
 }
@@ -69,16 +79,54 @@ func (m *Match) updateConfidence(confidence int) {
 // NewWebAnalyzer initializes webanalyzer by passing a reader of the
 // app definition and an schedulerChan, which allows the scanner to
 // add scan jobs on its own
-func NewWebAnalyzer(apps io.Reader, client *http.Client) (*WebAnalyzer, error) {
+func NewWebAnalyzer(apps io.Reader, categories io.Reader, groups io.Reader, client *http.Client) (*WebAnalyzer, error) {
 	wa := new(WebAnalyzer)
 
 	if err := wa.loadApps(apps); err != nil {
 		return nil, err
 	}
 
+	if err := wa.loadCategories(categories); err != nil {
+
+		return nil, err
+	}
+
+	if err := wa.loadGroups(groups); err != nil {
+		return nil, err
+	}
 	wa.client = client
 
 	return wa, nil
+}
+
+func (wa *WebAnalyzer) resolveCategories(app App) []MatchCategory {
+	var result []MatchCategory
+
+	for _, catID := range app.Cats {
+		category, ok := wa.catDefs[strconv.Itoa(int(catID))]
+		if !ok {
+			continue
+		}
+
+		var groupNames []string
+
+		for _, groupID := range category.Groups {
+			group, ok := wa.groupDefs[strconv.Itoa(int(groupID))]
+			if !ok {
+				continue
+			}
+
+			groupNames = append(groupNames, group.Name)
+		}
+
+		result = append(result, MatchCategory{
+			ID:     uint32(catID),
+			Name:   category.Name,
+			Groups: groupNames,
+		})
+	}
+
+	return result
 }
 
 // worker loops until channel is closed. processes a single host at once
@@ -97,18 +145,22 @@ func (wa *WebAnalyzer) Process(job *Job) (Result, []string) {
 
 	// measure time
 	t0 := time.Now()
-	result, links, err := wa.process(job, wa.appDefs)
+	result, links, finalURL, err := wa.process(job, wa.appDefs)
 	t1 := time.Now()
+
+	resultCount := len(result)
 
 	duration := t1.Sub(t0)
 	seconds := duration.Seconds()
 
 	res := Result{
-		Host:     job.URL,
-		Matches:  result,
-		Duration: duration,
-		Seconds:  seconds,
-		Error:    err,
+		Host:              job.URL,
+		FinalURL:          finalURL,
+		Technologies:      result,
+		TechnologiesCount: resultCount,
+		Duration:          duration,
+		Seconds:           seconds,
+		Error:             err,
 	}
 	return res, links
 }
@@ -150,12 +202,15 @@ func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
 	req.Header.Add("Accept", "*/*")
 
 	resp, err := client.Do(req)
-	fmt.Println("STATUS:", resp.StatusCode)
-	fmt.Println("FINAL URL:", resp.Request.URL.String())
-	fmt.Println("LOCATION:", resp.Header.Get("Location"))
+
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println("STATUS:", resp.StatusCode)
+	fmt.Println("FINAL URL:", resp.Request.URL.String())
+	fmt.Println("LOCATION:", resp.Header.Get("Location"))
+
 	return resp, nil
 }
 
@@ -189,7 +244,7 @@ func resolveLink(base *url.URL, val string, searchSubdomain bool) string {
 		return ""
 	}
 
-	if searchSubdomain && !isSubdomain(base, u) {
+	if searchSubdomain && !isSubdomain(base, urlResolved) {
 		return ""
 	}
 
@@ -212,9 +267,10 @@ func resolveLink(base *url.URL, val string, searchSubdomain bool) string {
 func parseLinks(doc *goquery.Document, base *url.URL, searchSubdomain bool) []string {
 	var links []string
 
-	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		val, ok := s.Attr("href")
-		if !ok {
+	doc.Find("a[href]").Each(func(i int, s *goquery.Selection) {
+		val, _ := s.Attr("href")
+		val = strings.TrimSpace(val)
+		if val == "" {
 			return
 		}
 
@@ -228,11 +284,63 @@ func parseLinks(doc *goquery.Document, base *url.URL, searchSubdomain bool) []st
 }
 
 func isSubdomain(base, u *url.URL) bool {
-	return domainutil.Domain(base.String()) == domainutil.Domain(u.String())
+	baseDomain := domainutil.Domain(base.Hostname())
+	targetDomain := domainutil.Domain(u.Hostname())
+
+	return baseDomain != "" && targetDomain != "" && baseDomain == targetDomain
+}
+
+func (wa *WebAnalyzer) crawlBFS(job *Job) []Result {
+	queue := []string{job.URL}
+
+	seen := map[string]bool{
+		job.URL: true,
+	}
+
+	var results []Result
+
+	for len(queue) > 0 {
+		currentURL := queue[0]
+		queue = queue[1:]
+
+		pageJob := NewOnlineJob(
+			currentURL,
+			"",
+			nil,
+			0, // important: Process only this page
+			job.SearchSubdomain,
+			job.followRedirect,
+		)
+
+		result, links := wa.Process(pageJob)
+
+		results = append(results, result)
+
+		if result.Error == nil {
+			for _, link := range links {
+				if seen[link] {
+					continue
+				}
+
+				seen[link] = true
+				queue = append(queue, link)
+			}
+		}
+
+		if job.Crawl > 0 && len(results) >= job.Crawl {
+			break
+		}
+	}
+
+	return results
+}
+
+func (wa *WebAnalyzer) Crawl(job *Job) []Result {
+	return wa.crawlBFS(job)
 }
 
 // do http request and analyze response
-func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []string, error) {
+func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []string, string, error) {
 	var apps = make([]Match, 0)
 	var err error
 
@@ -241,10 +349,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	var body []byte
 	var headers http.Header
 	var links []string
+	var finalURL string
 
 	baseURL, err := url.Parse(job.URL)
 	if err != nil {
-		return nil, links, fmt.Errorf("invalid URL %q: %w", job.URL, err)
+		return nil, links, "", fmt.Errorf("invalid URL %q: %w", job.URL, err)
 	}
 
 	// get response from host if allowed
@@ -255,14 +364,17 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	} else {
 		resp, err := fetchHost(job.URL, wa.client)
 		if err != nil {
-			return nil, links, fmt.Errorf("Failed to retrieve: %w", err)
+			return nil, links, "", fmt.Errorf("Failed to retrieve: %w", err)
 		}
+
+		finalURL = resp.Request.URL.String()
+		baseURL = resp.Request.URL
 
 		defer resp.Body.Close()
 
 		body, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, links, fmt.Errorf("failed to read response body: %w", err)
+			return nil, links, "", fmt.Errorf("failed to read response body: %w", err)
 		}
 
 		headers = resp.Header
@@ -285,20 +397,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
-		return nil, links, err
+		return nil, links, "", err
 	}
 
-	// handle crawling
-	if job.Crawl > 0 {
-
-		for c, link := range parseLinks(doc, baseURL, job.SearchSubdomain) {
-			if c >= job.Crawl {
-				break
-			}
-
-			links = append(links, link)
-		}
-	}
+	links = parseLinks(doc, baseURL, job.SearchSubdomain)
 
 	var scriptSources []string
 
@@ -331,9 +433,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		// the sub-loops and checks.
 
 		findings := Match{
-			App:     app,
-			AppName: appname,
-			Matches: make([][]string, 0),
+			App:        app,
+			AppName:    appname,
+			Matches:    make([][]string, 0),
+			Categories: wa.resolveCategories(app),
 		}
 
 		html := string(body)
@@ -431,7 +534,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 	}
 
-	return apps, links, nil
+	return apps, links, finalURL, nil
 }
 
 // runs a list of regexes on content
@@ -442,21 +545,45 @@ func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) 
 
 	for _, r := range regexes {
 		var matches [][]string
-		match, err := r.Regexp.FindStringMatch(content)
 
+		match, err := r.Regexp.FindStringMatch(content)
 		if err != nil {
+			fmt.Printf(
+				"REGEX ERROR name=%q pattern=%q error=%v\n",
+				r.Name,
+				r.Pattern,
+				err,
+			)
 			continue
 		}
 
 		for match != nil {
 			groups := match.Groups()
+
 			row := make([]string, 0, len(groups))
+
 			for _, group := range groups {
-				row = append(row, group.String())
+
+				if len(group.Captures) == 0 {
+					row = append(row, "")
+					continue
+				}
+
+				value := group.String()
+
+				row = append(row, value)
 			}
+
 			matches = append(matches, row)
+
 			match, err = r.Regexp.FindNextMatch(match)
 			if err != nil {
+				fmt.Printf(
+					"NEXT MATCH ERROR name=%q pattern=%q error=%v\n",
+					r.Name,
+					r.Pattern,
+					err,
+				)
 				break
 			}
 		}
@@ -475,6 +602,7 @@ func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) 
 			confidence = r.Confidence
 		}
 	}
+
 	return m, version, confidence
 }
 

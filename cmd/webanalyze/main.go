@@ -127,7 +127,23 @@ func main() {
 	}
 	defer techsFile.Close()
 
-	if wa, err = webanalyze.NewWebAnalyzer(techsFile, nil); err != nil {
+	categoriesFile, err := os.Open("categories.json")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer categoriesFile.Close()
+
+	groupsFile, err := os.Open("groups.json")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer groupsFile.Close()
+
+	if wa, err = webanalyze.NewWebAnalyzer(techsFile, categoriesFile, groupsFile, nil); err != nil {
 		log.Fatalf("initialization failed: %v", err)
 	}
 
@@ -149,17 +165,17 @@ func main() {
 
 			for host := range hosts {
 				job := webanalyze.NewOnlineJob(host, "", nil, crawlCount, searchSubdomain, redirect)
-				result, links := wa.Process(job)
 
-				if searchSubdomain {
-					for _, v := range links {
-						crawlJob := webanalyze.NewOnlineJob(v, "", nil, 0, false, redirect)
-						result, _ := wa.Process(crawlJob)
+				if crawlCount > 0 {
+					results := wa.Crawl(job)
+
+					for _, result := range results {
 						output(result, wa, outWriter, outJsonWriter)
 					}
+				} else {
+					result, _ := wa.Process(job)
+					output(result, wa, outWriter, outJsonWriter)
 				}
-
-				output(result, wa, outWriter, outJsonWriter)
 			}
 
 		})
@@ -188,7 +204,7 @@ func output(result webanalyze.Result, wa *webanalyze.WebAnalyzer, outWriter *csv
 	switch outputMethod {
 	case "stdout":
 		fmt.Printf("%v (%.1fs):\n", result.Host, result.Seconds)
-		for _, a := range result.Matches {
+		for _, a := range result.Technologies {
 
 			var categories []string
 
@@ -198,12 +214,12 @@ func output(result webanalyze.Result, wa *webanalyze.WebAnalyzer, outWriter *csv
 
 			fmt.Printf("    %v, %v (%v)\n", a.AppName, a.Version, strings.Join(categories, ", "))
 		}
-		if len(result.Matches) <= 0 {
+		if len(result.Technologies) <= 0 {
 			fmt.Printf("    <no results>\n")
 		}
 
 	case "csv":
-		for _, m := range result.Matches {
+		for _, m := range result.Technologies {
 			outWriter.Write(
 				[]string{
 					result.Host,
