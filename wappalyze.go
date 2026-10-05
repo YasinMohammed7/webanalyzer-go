@@ -49,15 +49,22 @@ type App struct {
 	// Computed fields, not part of technologies JSON.
 	// Runtime/computed data
 
-	HTMLRegex      []AppRegexp `json:"-"`
-	ScriptRegex    []AppRegexp `json:"-"`
-	ScriptSrcRegex []AppRegexp `json:"-"`
-	TextRegex      []AppRegexp `json:"-"`
-	URLRegex       []AppRegexp `json:"-"`
-	HeaderRegex    []AppRegexp `json:"-"`
-	MetaRegex      []AppRegexp `json:"-"`
-	CookieRegex    []AppRegexp `json:"-"`
-	RobotsRegex    []AppRegexp `json:"-"`
+	HTMLRegex      []AppRegexp   `json:"-"`
+	ScriptRegex    []AppRegexp   `json:"-"`
+	ScriptSrcRegex []AppRegexp   `json:"-"`
+	TextRegex      []AppRegexp   `json:"-"`
+	URLRegex       []AppRegexp   `json:"-"`
+	HeaderRegex    []AppRegexp   `json:"-"`
+	MetaRegex      []AppRegexp   `json:"-"`
+	CookieRegex    []AppRegexp   `json:"-"`
+	RobotsRegex    []AppRegexp   `json:"-"`
+	ProbeRegex     []ProbeRegexp `json:"-"`
+}
+
+type ProbeRegexp struct {
+	Path       string
+	Regexp     AppRegexp
+	ExistsOnly bool
 }
 
 // Category names defined by wappalyzer
@@ -378,6 +385,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app.URLRegex = compileRegexes(value.URL)
 		app.TextRegex = compileRegexes(value.Text)
 		app.RobotsRegex = compileRegexes(value.Robots)
+		app.ProbeRegex = compileProbeRegexes(value.Probe)
 
 		app.HeaderRegex = compileNamedRegexes(app.Headers)
 		app.CookieRegex = compileNamedRegexes(app.Cookies)
@@ -491,4 +499,31 @@ func compileAppRegexp(name, value string) (AppRegexp, bool) {
 	}
 
 	return appRegexp, true
+}
+
+func compileProbeRegexes(probes map[string]string) []ProbeRegexp {
+	compiled := make([]ProbeRegexp, 0, len(probes))
+
+	for path, value := range probes {
+		if value == "" {
+			compiled = append(compiled, ProbeRegexp{
+				Path:       path,
+				ExistsOnly: true,
+			})
+
+			continue
+		}
+
+		r, ok := compileAppRegexp(path, value)
+		if !ok {
+			continue
+		}
+
+		compiled = append(compiled, ProbeRegexp{
+			Path:   path,
+			Regexp: r,
+		})
+	}
+
+	return compiled
 }
