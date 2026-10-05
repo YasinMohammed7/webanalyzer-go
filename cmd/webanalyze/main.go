@@ -255,7 +255,6 @@ func output(result webanalyze.Result, wa *webanalyze.WebAnalyzer, outWriter *csv
 			outWriter.Write(
 				[]string{
 					result.Host,
-					strings.Join(m.CatNames, ","),
 					m.AppName,
 					m.Version,
 				},

@@ -49,7 +49,6 @@ type App struct {
 	// Computed fields, not part of technologies JSON.
 	// Runtime/computed data
 
-	CatNames       []string    `json:"-"`
 	HTMLRegex      []AppRegexp `json:"-"`
 	ScriptRegex    []AppRegexp `json:"-"`
 	ScriptSrcRegex []AppRegexp `json:"-"`
