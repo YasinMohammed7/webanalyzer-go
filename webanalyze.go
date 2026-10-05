@@ -351,15 +351,23 @@ func (wa *WebAnalyzer) Crawl(job *Job) []Result {
 	return wa.crawlBFS(job)
 }
 
-func fetchRobots(baseURL *url.URL, client *http.Client) string {
-	u := *baseURL
+func fetchRobots(
+	baseURL *url.URL,
+	client *http.Client,
+	followRedirect bool,
+) string {
 
+	u := *baseURL
 	u.Path = "/robots.txt"
 	u.RawPath = ""
 	u.RawQuery = ""
 	u.Fragment = ""
 
-	resp, err := client.Get(u.String())
+	resp, err := fetchHost(
+		u.String(),
+		client,
+		followRedirect,
+	)
 	if err != nil {
 		return ""
 	}
@@ -469,7 +477,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	html := string(body)
 
 	if !job.forceNotDownload {
-		robotsText = fetchRobots(baseURL, wa.client)
+		robotsText = fetchRobots(baseURL, wa.client, job.followRedirect)
 	}
 
 	for appname, app := range appDefs {
