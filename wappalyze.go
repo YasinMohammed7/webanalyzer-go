@@ -57,6 +57,7 @@ type App struct {
 	HeaderRegex    []AppRegexp `json:"-"`
 	MetaRegex      []AppRegexp `json:"-"`
 	CookieRegex    []AppRegexp `json:"-"`
+	RobotsRegex    []AppRegexp `json:"-"`
 }
 
 // Category names defined by wappalyzer
@@ -376,9 +377,11 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app.ScriptSrcRegex = compileRegexes(value.ScriptSrc)
 		app.URLRegex = compileRegexes(value.URL)
 		app.TextRegex = compileRegexes(value.Text)
+		app.RobotsRegex = compileRegexes(value.Robots)
 
 		app.HeaderRegex = compileNamedRegexes(app.Headers)
 		app.CookieRegex = compileNamedRegexes(app.Cookies)
+
 		app.MetaRegex = compileNamedRegexArrays(app.Meta)
 
 		wa.appDefs[key] = app

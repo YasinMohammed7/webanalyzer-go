@@ -339,6 +339,34 @@ func (wa *WebAnalyzer) Crawl(job *Job) []Result {
 	return wa.crawlBFS(job)
 }
 
+func fetchRobots(baseURL *url.URL, client *http.Client) string {
+	u := *baseURL
+
+	u.Path = "/robots.txt"
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+
+	resp, err := client.Get(u.String())
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ""
+	}
+
+	body, err := io.ReadAll(
+		io.LimitReader(resp.Body, 1<<20),
+	)
+	if err != nil {
+		return ""
+	}
+
+	return string(body)
+}
+
 // do http request and analyze response
 func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []string, string, error) {
 	var apps = make([]Match, 0)
@@ -350,6 +378,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	var headers http.Header
 	var links []string
 	var finalURL string
+	var robotsText string
 
 	baseURL, err := url.Parse(job.URL)
 	if err != nil {
@@ -436,6 +465,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	html := string(body)
 
+	if !job.forceNotDownload {
+		robotsText = fetchRobots(baseURL, wa.client)
+	}
+
 	for appname, app := range appDefs {
 
 		findings := Match{
@@ -465,7 +498,15 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			findings.updateVersion(v, c)
 		}
 
+		// check text
 		if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
+			findings.Matches = append(findings.Matches, m...)
+			findings.updateConfidence(c)
+			findings.updateVersion(v, c)
+		}
+
+		// check robots.txt
+		if m, v, c := findMatches(robotsText, app.RobotsRegex); len(m) > 0 {
 			findings.Matches = append(findings.Matches, m...)
 			findings.updateConfidence(c)
 			findings.updateVersion(v, c)
