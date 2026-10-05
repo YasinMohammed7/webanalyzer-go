@@ -3,41 +3,6 @@
   "final_url": "https://www.r-gol.com/",
   "technologies": [
     {
-      "app_name": "HSTS",
-      "app": {
-        "description": "HTTP Strict Transport Security (HSTS) informs browsers that the site should only be accessed using HTTPS.",
-        "cats": [
-          16
-        ],
-        "headers": {
-          "Strict-Transport-Security": ""
-        },
-        "url": [
-          "^https://[\\w\\d\\.\\-]+(?:\\.dev)(?:/.+||/)$"
-        ],
-        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
-      },
-      "matches": [
-        [
-          "max-age=2592000; includeSubDomains; preload;"
-        ],
-        [
-          ""
-        ]
-      ],
-      "version": "",
-      "confidence": 100,
-      "categories": [
-        {
-          "id": 16,
-          "name": "Security",
-          "groups": [
-            "Security"
-          ]
-        }
-      ]
-    },
-    {
       "app_name": "cdnjs",
       "app": {
         "description": "cdnjs is a free distributed JS library delivery service.",
@@ -125,37 +90,105 @@
       ]
     },
     {
-      "app_name": "Axios",
+      "app_name": "HTTP/3",
       "app": {
-        "description": "Promise based HTTP client for the browser and node.js",
+        "description": "HTTP/3 is the third major version of the Hypertext Transfer Protocol used to exchange information on the World Wide Web.",
         "cats": [
-          59
+          19
         ],
-        "cpe": "cpe:2.3:a:axios:axios:*:*:*:*:*:node.js:*:*",
-        "js": {
-          "axios.get": ""
+        "headers": {
+          "Alt-Svc": "h3",
+          "X-Firefox-Http3": "h3"
         },
-        "scriptSrc": [
-          "/axios(@|/)([\\d.]+)(?:/[a-z]+)?/axios(?:.min)?\\.js\\;version:\\2"
+        "excludes": [
+          "HTTP/2"
         ],
-        "website": "https://github.com/axios/axios",
-        "icon": "Axios.svg"
+        "website": "https://httpwg.org/",
+        "icon": "HTTP3.svg"
       },
       "matches": [
         [
-          "/axios/1.4.0/axios.min.js",
-          "/",
-          "1.4.0"
+          "h3"
         ]
       ],
-      "version": "1.4.0",
+      "version": "",
       "confidence": 100,
       "categories": [
         {
-          "id": 59,
-          "name": "JavaScript libraries",
+          "id": 19,
+          "name": "Miscellaneous",
           "groups": [
-            "Web development"
+            "Other"
+          ]
+        }
+      ]
+    },
+    {
+      "app_name": "Cloudflare",
+      "app": {
+        "description": "Cloudflare is a web-infrastructure and website-security company, providing content-delivery-network services, DDoS mitigation, Internet security, and distributed domain-name-server services.",
+        "cats": [
+          31
+        ],
+        "cpe": "cpe:2.3:a:cloudflare:cloudflare:*:*:*:*:*:*:*:*",
+        "cookies": {
+          "__cfduid": ""
+        },
+        "js": {
+          "CloudFlare": ""
+        },
+        "dom": [
+          "img[src*='//cdn.cloudflare']"
+        ],
+        "dns": {
+          "NS": [
+            "\\.cloudflare\\.com"
+          ],
+          "SOA": [
+            "\\.cloudflare\\.com"
+          ],
+          "TXT": [
+            "cloudflare_dashboard_sso="
+          ]
+        },
+        "headers": {
+          "Server": "^cloudflare$",
+          "cf-cache-status": "",
+          "cf-ray": ""
+        },
+        "meta": {
+          "image": [
+            "//cdn\\.cloudflare"
+          ]
+        },
+        "website": "https://www.cloudflare.com",
+        "icon": "CloudFlare.svg"
+      },
+      "matches": [
+        [
+          "cloudflare"
+        ],
+        [
+          "DYNAMIC"
+        ],
+        [
+          ""
+        ],
+        [
+          "a45d41b29c75a829-OTP"
+        ],
+        [
+          ""
+        ]
+      ],
+      "version": "",
+      "confidence": 100,
+      "categories": [
+        {
+          "id": 31,
+          "name": "CDN",
+          "groups": [
+            "Servers"
           ]
         }
       ]
@@ -214,112 +247,79 @@
       ]
     },
     {
-      "app_name": "Cloudflare",
+      "app_name": "Axios",
       "app": {
-        "description": "Cloudflare is a web-infrastructure and website-security company, providing content-delivery-network services, DDoS mitigation, Internet security, and distributed domain-name-server services.",
+        "description": "Promise based HTTP client for the browser and node.js",
         "cats": [
-          31
+          59
         ],
-        "cpe": "cpe:2.3:a:cloudflare:cloudflare:*:*:*:*:*:*:*:*",
-        "cookies": {
-          "__cfduid": ""
-        },
+        "cpe": "cpe:2.3:a:axios:axios:*:*:*:*:*:node.js:*:*",
         "js": {
-          "CloudFlare": ""
+          "axios.get": ""
         },
-        "dom": [
-          "img[src*='//cdn.cloudflare']"
+        "scriptSrc": [
+          "/axios(@|/)([\\d.]+)(?:/[a-z]+)?/axios(?:.min)?\\.js\\;version:\\2"
         ],
-        "dns": {
-          "NS": [
-            "\\.cloudflare\\.com"
-          ],
-          "SOA": [
-            "\\.cloudflare\\.com"
-          ],
-          "TXT": [
-            "cloudflare_dashboard_sso="
-          ]
-        },
-        "headers": {
-          "Server": "^cloudflare$",
-          "cf-cache-status": "",
-          "cf-ray": ""
-        },
-        "meta": {
-          "image": [
-            "//cdn\\.cloudflare"
-          ]
-        },
-        "website": "https://www.cloudflare.com",
-        "icon": "CloudFlare.svg"
+        "website": "https://github.com/axios/axios",
+        "icon": "Axios.svg"
       },
       "matches": [
         [
-          "a45cb3ff2945e4b5-OTP"
-        ],
-        [
-          ""
-        ],
-        [
-          "cloudflare"
-        ],
-        [
-          "DYNAMIC"
-        ],
-        [
-          ""
+          "/axios/1.4.0/axios.min.js",
+          "/",
+          "1.4.0"
         ]
       ],
-      "version": "",
+      "version": "1.4.0",
       "confidence": 100,
       "categories": [
         {
-          "id": 31,
-          "name": "CDN",
+          "id": 59,
+          "name": "JavaScript libraries",
           "groups": [
-            "Servers"
+            "Web development"
           ]
         }
       ]
     },
     {
-      "app_name": "HTTP/3",
+      "app_name": "HSTS",
       "app": {
-        "description": "HTTP/3 is the third major version of the Hypertext Transfer Protocol used to exchange information on the World Wide Web.",
+        "description": "HTTP Strict Transport Security (HSTS) informs browsers that the site should only be accessed using HTTPS.",
         "cats": [
-          19
+          16
         ],
         "headers": {
-          "Alt-Svc": "h3",
-          "X-Firefox-Http3": "h3"
+          "Strict-Transport-Security": ""
         },
-        "excludes": [
-          "HTTP/2"
+        "url": [
+          "^https://[\\w\\d\\.\\-]+(?:\\.dev)(?:/.+||/)$"
         ],
-        "website": "https://httpwg.org/",
-        "icon": "HTTP3.svg"
+        "website": "https://www.rfc-editor.org/rfc/rfc6797#section-6.1"
       },
       "matches": [
         [
-          "h3"
+          "max-age=2592000; includeSubDomains; preload;"
+        ],
+        [
+          ""
         ]
       ],
       "version": "",
       "confidence": 100,
       "categories": [
         {
-          "id": 19,
-          "name": "Miscellaneous",
+          "id": 16,
+          "name": "Security",
           "groups": [
-            "Other"
+            "Security"
           ]
         }
       ]
     }
   ],
   "technologies_count": 7,
-  "duration": 1172593959,
-  "seconds": 1.172593959,
+  "duration": 1193789583,
+  "seconds": 1.193789583,
   "error": null
 }

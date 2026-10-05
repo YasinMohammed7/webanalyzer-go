@@ -399,6 +399,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	var links []string
 	var finalURL string
 	var robotsText string
+	var certIssuer string
 
 	baseURL, err := url.Parse(job.URL)
 	if err != nil {
@@ -418,6 +419,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		finalURL = resp.Request.URL.String()
 		baseURL = resp.Request.URL
+
+		if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+			certIssuer = resp.TLS.PeerCertificates[0].Issuer.String()
+		}
 
 		defer resp.Body.Close()
 
@@ -530,6 +535,13 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 				findings.updateConfidence(c)
 				findings.updateVersion(v, c)
 			}
+		}
+
+		// check TLS certificate issuer
+		if m, v, c := findMatches(certIssuer, app.CertIssuerRegex); len(m) > 0 {
+			findings.Matches = append(findings.Matches, m...)
+			findings.updateConfidence(c)
+			findings.updateVersion(v, c)
 		}
 
 		// check meta tags

@@ -49,16 +49,17 @@ type App struct {
 	// Computed fields, not part of technologies JSON.
 	// Runtime/computed data
 
-	HTMLRegex      []AppRegexp   `json:"-"`
-	ScriptRegex    []AppRegexp   `json:"-"`
-	ScriptSrcRegex []AppRegexp   `json:"-"`
-	TextRegex      []AppRegexp   `json:"-"`
-	URLRegex       []AppRegexp   `json:"-"`
-	HeaderRegex    []AppRegexp   `json:"-"`
-	MetaRegex      []AppRegexp   `json:"-"`
-	CookieRegex    []AppRegexp   `json:"-"`
-	RobotsRegex    []AppRegexp   `json:"-"`
-	ProbeRegex     []ProbeRegexp `json:"-"`
+	HTMLRegex       []AppRegexp   `json:"-"`
+	ScriptRegex     []AppRegexp   `json:"-"`
+	ScriptSrcRegex  []AppRegexp   `json:"-"`
+	TextRegex       []AppRegexp   `json:"-"`
+	URLRegex        []AppRegexp   `json:"-"`
+	HeaderRegex     []AppRegexp   `json:"-"`
+	MetaRegex       []AppRegexp   `json:"-"`
+	CookieRegex     []AppRegexp   `json:"-"`
+	RobotsRegex     []AppRegexp   `json:"-"`
+	ProbeRegex      []ProbeRegexp `json:"-"`
+	CertIssuerRegex []AppRegexp   `json:"-"`
 }
 
 type ProbeRegexp struct {
@@ -386,6 +387,12 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app.TextRegex = compileRegexes(value.Text)
 		app.RobotsRegex = compileRegexes(value.Robots)
 		app.ProbeRegex = compileProbeRegexes(value.Probe)
+
+		if value.CertIssuer != "" {
+			if r, ok := compileAppRegexp("", value.CertIssuer); ok {
+				app.CertIssuerRegex = []AppRegexp{r}
+			}
+		}
 
 		app.HeaderRegex = compileNamedRegexes(app.Headers)
 		app.CookieRegex = compileNamedRegexes(app.Cookies)
