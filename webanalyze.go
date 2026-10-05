@@ -3,6 +3,7 @@ package webanalyze
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -173,7 +174,7 @@ func (wa *WebAnalyzer) CategoryById(cid int) string {
 	return wa.catDefs[strconv.Itoa(cid)].Name
 }
 
-func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
+func fetchHost(urlStr string, client *http.Client, followRedirect bool) (*http.Response, error) {
 	if client == nil {
 		client = &http.Client{
 			Timeout: timeout,
@@ -182,6 +183,17 @@ func fetchHost(urlStr string, client *http.Client) (*http.Response, error) {
 				Proxy:           http.ProxyFromEnvironment,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if !followRedirect {
+
+					return http.ErrUseLastResponse
+				}
+
+				if len(via) >= 10 {
+
+					return errors.New("too many redirects")
+
+				}
+
 				baseURL, err := url.Parse(urlStr)
 				if err != nil {
 					return http.ErrUseLastResponse
@@ -391,7 +403,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		headers = job.Headers
 		cookies = job.Cookies
 	} else {
-		resp, err := fetchHost(job.URL, wa.client)
+		resp, err := fetchHost(job.URL, wa.client, job.followRedirect)
 		if err != nil {
 			return nil, links, "", fmt.Errorf("Failed to retrieve: %w", err)
 		}
@@ -407,15 +419,6 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 
 		headers = resp.Header
-
-		if job.followRedirect {
-			if location := resp.Header.Get("Location"); location != "" {
-
-				if u := resolveLink(baseURL, location, job.SearchSubdomain); u != "" {
-					links = append(links, u)
-				}
-			}
-		}
 
 		cookies = resp.Cookies()
 	}

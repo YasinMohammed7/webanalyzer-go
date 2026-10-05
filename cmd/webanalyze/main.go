@@ -42,7 +42,7 @@ func init() {
 	flag.IntVar(&crawlCount, "crawl", 0, "links to follow from the root page (default 0)")
 	flag.BoolVar(&searchSubdomain, "search", true, "searches all urls with same base domain (i.e. example.com and sub.example.com)")
 	flag.BoolVar(&silent, "silent", false, "avoid printing header (default false)")
-	flag.BoolVar(&redirect, "redirect", false, "follow http redirects (default false)")
+	flag.BoolVar(&redirect, "redirect", true, "follow http redirects (default true)")
 }
 
 func main() {
