@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -58,6 +59,8 @@ type WebAnalyzer struct {
 	scheduler chan *Job
 	client    *http.Client
 }
+
+type DNSResult map[string][]string
 
 func (m *Match) updateVersion(version string, confidence int) {
 
@@ -224,6 +227,37 @@ func fetchHost(urlStr string, client *http.Client, followRedirect bool) (*http.R
 	fmt.Println("LOCATION:", resp.Header.Get("Location"))
 
 	return resp, nil
+}
+
+func fetchDNS(domain string) DNSResult {
+	result := make(DNSResult)
+
+	if mxRecords, err := net.LookupMX(domain); err == nil {
+		for _, mx := range mxRecords {
+			result["MX"] = append(
+				result["MX"],
+				strings.TrimSuffix(mx.Host, "."),
+			)
+		}
+	}
+
+	if nsRecords, err := net.LookupNS(domain); err == nil {
+		for _, ns := range nsRecords {
+			result["NS"] = append(
+				result["NS"],
+				strings.TrimSuffix(ns.Host, "."),
+			)
+		}
+	}
+
+	if txtRecords, err := net.LookupTXT(domain); err == nil {
+		result["TXT"] = append(
+			result["TXT"],
+			txtRecords...,
+		)
+	}
+
+	return result
 }
 
 func unique(strSlice []string) []string {
@@ -481,6 +515,9 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	html := string(body)
 
+	dnsDomain := domainutil.Domain(baseURL.String())
+	dnsResults := fetchDNS(dnsDomain)
+
 	if !job.forceNotDownload {
 		robotsText = fetchRobots(baseURL, wa.client, job.followRedirect)
 	}
@@ -588,6 +625,19 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 				}
 			}
 
+		}
+
+		// check DNS
+		for recordType, regexes := range app.DNSRegex {
+			values := dnsResults[recordType]
+
+			for _, value := range values {
+				if m, v, c := findMatches(value, regexes); len(m) > 0 {
+					findings.Matches = append(findings.Matches, m...)
+					findings.updateConfidence(c)
+					findings.updateVersion(v, c)
+				}
+			}
 		}
 
 		if len(findings.Matches) > 0 {

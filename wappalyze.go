@@ -49,17 +49,18 @@ type App struct {
 	// Computed fields, not part of technologies JSON.
 	// Runtime/computed data
 
-	HTMLRegex       []AppRegexp   `json:"-"`
-	ScriptRegex     []AppRegexp   `json:"-"`
-	ScriptSrcRegex  []AppRegexp   `json:"-"`
-	TextRegex       []AppRegexp   `json:"-"`
-	URLRegex        []AppRegexp   `json:"-"`
-	HeaderRegex     []AppRegexp   `json:"-"`
-	MetaRegex       []AppRegexp   `json:"-"`
-	CookieRegex     []AppRegexp   `json:"-"`
-	RobotsRegex     []AppRegexp   `json:"-"`
-	ProbeRegex      []ProbeRegexp `json:"-"`
-	CertIssuerRegex []AppRegexp   `json:"-"`
+	HTMLRegex       []AppRegexp            `json:"-"`
+	ScriptRegex     []AppRegexp            `json:"-"`
+	ScriptSrcRegex  []AppRegexp            `json:"-"`
+	TextRegex       []AppRegexp            `json:"-"`
+	URLRegex        []AppRegexp            `json:"-"`
+	HeaderRegex     []AppRegexp            `json:"-"`
+	MetaRegex       []AppRegexp            `json:"-"`
+	CookieRegex     []AppRegexp            `json:"-"`
+	RobotsRegex     []AppRegexp            `json:"-"`
+	ProbeRegex      []ProbeRegexp          `json:"-"`
+	CertIssuerRegex []AppRegexp            `json:"-"`
+	DNSRegex        map[string][]AppRegexp `json:"-"`
 }
 
 type ProbeRegexp struct {
@@ -398,6 +399,12 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app.CookieRegex = compileNamedRegexes(app.Cookies)
 
 		app.MetaRegex = compileNamedRegexArrays(app.Meta)
+
+		app.DNSRegex = make(map[string][]AppRegexp)
+
+		for recordType, patterns := range value.DNS {
+			app.DNSRegex[recordType] = compileRegexes(patterns)
+		}
 
 		wa.appDefs[key] = app
 
