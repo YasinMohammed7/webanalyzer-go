@@ -56,8 +56,8 @@ type WebAnalyzer struct {
 	appDefs   AppsDefinition
 	catDefs   CategoriesDefinition
 	groupDefs GroupsDefinition
-	scheduler chan *Job
 	client    *http.Client
+	browser   *Browser
 }
 
 type DNSResult map[string][]string
@@ -98,9 +98,34 @@ func NewWebAnalyzer(apps io.Reader, categories io.Reader, groups io.Reader, clie
 	if err := wa.loadGroups(groups); err != nil {
 		return nil, err
 	}
+
 	wa.client = client
 
 	return wa, nil
+}
+
+func (wa *WebAnalyzer) EnableBrowser() error {
+
+	if wa.browser != nil {
+		return nil
+	}
+	browser, err := NewBrowser()
+	if err != nil {
+		return err
+	}
+	wa.browser = browser
+	return nil
+
+}
+
+func (wa *WebAnalyzer) CloseBrowser() {
+
+	if wa.browser == nil {
+		return
+	}
+	wa.browser.Close()
+	wa.browser = nil
+
 }
 
 func (wa *WebAnalyzer) resolveCategories(app App) []MatchCategory {

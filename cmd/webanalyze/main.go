@@ -30,19 +30,21 @@ var (
 	searchSubdomain bool
 	silent          bool
 	redirect        bool
+	browser         bool
 )
 
 func init() {
 	flag.StringVar(&outputMethod, "output", "stdout", "output format (stdout|csv|json|jsonfile)")
 	flag.BoolVar(&update, "update", false, "update technologies file to current dir")
-	flag.IntVar(&workers, "worker", runtime.NumCPU()*2, "number of worker")
 	flag.StringVar(&techsFilename, "apps", "technologies.json", "technologies definition file")
+	flag.IntVar(&workers, "worker", 0, "number of workers (0 = automatic)")
 	flag.StringVar(&host, "host", "", "single host to test")
 	flag.StringVar(&hosts, "hosts", "", "filename with hosts, one host per line.")
 	flag.IntVar(&crawlCount, "crawl", 0, "links to follow from the root page (default 0)")
-	flag.BoolVar(&searchSubdomain, "search", true, "searches all urls with same base domain (i.e. example.com and sub.example.com)")
+	flag.BoolVar(&searchSubdomain, "search", false, "searches all urls with same base domain (i.e. example.com and sub.example.com)")
 	flag.BoolVar(&silent, "silent", false, "avoid printing header (default false)")
 	flag.BoolVar(&redirect, "redirect", true, "follow http redirects (default true)")
+	flag.BoolVar(&browser, "browser", true, "enable browser automation (default true)")
 }
 
 func main() {
@@ -57,6 +59,16 @@ func main() {
 	)
 
 	flag.Parse()
+
+	if workers == 0 {
+
+		if browser {
+			workers = runtime.NumCPU()
+		} else {
+			workers = runtime.NumCPU() * 2
+		}
+
+	}
 
 	if !update && host == "" && hosts == "" {
 		flag.Usage()
@@ -147,6 +159,22 @@ func main() {
 
 	if wa, err = webanalyze.NewWebAnalyzer(techsFile, categoriesFile, groupsFile, nil); err != nil {
 		log.Fatalf("initialization failed: %v", err)
+	}
+
+	if browser {
+
+		if err := wa.EnableBrowser(); err != nil {
+			log.Fatalf("failed to initialize browser: %v", err)
+		}
+
+		defer wa.CloseBrowser()
+
+		// testing purpose only, can be removed later
+
+		if err := wa.BrowserTest(host); err != nil {
+
+			log.Printf("browser error: %v", err)
+		}
 	}
 
 	if !silent {
@@ -287,6 +315,7 @@ func printHeader() {
 	printOption("crawl count", crawlCount)
 	printOption("search subdomains", searchSubdomain)
 	printOption("follow redirects", redirect)
+	printOption("browser", browser)
 	fmt.Printf("\n")
 }
 
