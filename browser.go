@@ -2,7 +2,8 @@ package webanalyze
 
 import (
 	"context"
-	"time"
+	"encoding/json"
+	"fmt"
 
 	"github.com/chromedp/chromedp"
 )
@@ -16,7 +17,6 @@ type Browser struct {
 func NewBrowser() (*Browser, error) {
 	opts := append(
 		chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", false),
 		chromedp.Flag("ignore-certificate-errors", true),
 	)
 
@@ -46,21 +46,84 @@ func (b *Browser) NewTab() (context.Context, context.CancelFunc) {
 	return chromedp.NewContext(b.ctx)
 }
 
-func (wa *WebAnalyzer) BrowserTest(pageURL string) error {
+func (b *Browser) GetJSProperties(
+	ctx context.Context,
+	paths []string,
+) (map[string]JSResult, error) {
 
-	if wa.browser == nil {
-		return nil
+	if len(paths) == 0 {
+		return map[string]JSResult{}, nil
 	}
-	ctx, cancel := wa.browser.NewTab()
-	defer cancel()
-	_, err := chromedp.Run(
+
+	pathsJSON, err := json.Marshal(paths)
+	if err != nil {
+		return nil, err
+	}
+
+	expression := fmt.Sprintf(`
+		(() => {
+			const paths = %s;
+			const results = {};
+
+			for (const path of paths) {
+				try {
+					const parts = path.split(".");
+					let value = window;
+					let exists = true;
+
+					for (const part of parts) {
+						if (
+							value === null ||
+							value === undefined ||
+							!(part in Object(value))
+						) {
+							exists = false;
+							break;
+						}
+
+						value = value[part];
+					}
+
+					if (
+						!exists ||
+						value === null ||
+						value === undefined
+					) {
+						results[path] = {
+							exists: false,
+							value: ""
+						};
+
+						continue;
+					}
+
+					results[path] = {
+						exists: true,
+						value: String(value)
+					};
+
+				} catch {
+					results[path] = {
+						exists: false,
+						value: ""
+					};
+				}
+			}
+
+			return results;
+		})()
+	`, pathsJSON)
+
+	results, err := chromedp.Run(
 		ctx,
-		chromedp.Navigate(pageURL),
+		chromedp.Evaluate[map[string]JSResult](expression),
 	)
 
-	time.Sleep(10 * time.Second)
-	return err
+	if err != nil {
+		return nil, err
+	}
 
+	return results, nil
 }
 
 func (b *Browser) Close() {

@@ -61,6 +61,7 @@ type App struct {
 	ProbeRegex      []ProbeRegexp          `json:"-"`
 	CertIssuerRegex []AppRegexp            `json:"-"`
 	DNSRegex        map[string][]AppRegexp `json:"-"`
+	JSRegex         []AppRegexp            `json:"-"`
 }
 
 type ProbeRegexp struct {
@@ -195,27 +196,37 @@ func (t *IntArray) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("expected int or []int, got %s", string(data))
 }
 
-func (app *App) FindInHeaders(headers http.Header) (matches [][]string, version string, confidence int) {
-	var v string
-	var c int
+func (app *App) FindInHeaders(
+	headers http.Header,
+	findings *Match,
+) {
+	for _, headerRegex := range app.HeaderRegex {
+		values := headers.Values(headerRegex.Name)
 
-	for _, hre := range app.HeaderRegex {
-		if headers.Get(hre.Name) == "" {
-			continue
-		}
-		hk := http.CanonicalHeaderKey(hre.Name)
-		for _, headerValue := range headers[hk] {
-			if headerValue == "" {
+		for _, value := range values {
+			if value == "" {
 				continue
 			}
-			if m, version, confidence := findMatches(headerValue, []AppRegexp{hre}); len(m) > 0 {
-				matches = append(matches, m...)
-				v = version
-				c = confidence
+
+			m, v, c := findMatches(
+				value,
+				[]AppRegexp{headerRegex},
+			)
+
+			if len(m) == 0 {
+				continue
 			}
+
+			findings.addDetection(
+				"header",
+				headerRegex.Name,
+				value,
+				m,
+				v,
+				c,
+			)
 		}
 	}
-	return matches, v, c
 }
 
 func downloadGroups() (map[string]Group, error) {
@@ -377,8 +388,9 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		return err
 	}
 
-	for key, value := range wa.appDefs {
+	jsPaths := make(map[string]struct{})
 
+	for key, value := range wa.appDefs {
 		app := wa.appDefs[key]
 
 		app.HTMLRegex = compileRegexes(value.HTML)
@@ -397,6 +409,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 
 		app.HeaderRegex = compileNamedRegexes(app.Headers)
 		app.CookieRegex = compileNamedRegexes(app.Cookies)
+		app.JSRegex = compileNamedRegexes(app.JS)
 
 		app.MetaRegex = compileNamedRegexArrays(app.Meta)
 
@@ -406,8 +419,18 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 			app.DNSRegex[recordType] = compileRegexes(patterns)
 		}
 
-		wa.appDefs[key] = app
+		// collect unique JavaScript paths
+		for _, jsRegex := range app.JSRegex {
+			jsPaths[jsRegex.Name] = struct{}{}
+		}
 
+		wa.appDefs[key] = app
+	}
+
+	wa.jsPaths = make([]string, 0, len(jsPaths))
+
+	for path := range jsPaths {
+		wa.jsPaths = append(wa.jsPaths, path)
 	}
 
 	return nil

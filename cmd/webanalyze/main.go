@@ -168,13 +168,6 @@ func main() {
 		}
 
 		defer wa.CloseBrowser()
-
-		// testing purpose only, can be removed later
-
-		if err := wa.BrowserTest(host); err != nil {
-
-			log.Printf("browser error: %v", err)
-		}
 	}
 
 	if !silent {

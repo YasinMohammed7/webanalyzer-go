@@ -2,6 +2,7 @@ package webanalyze
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bobesa/go-domain-util/domainutil"
+	"github.com/chromedp/chromedp"
 )
 
 const VERSION = "0.3.9"
@@ -40,14 +42,22 @@ type MatchCategory struct {
 	Groups []string `json:"groups"`
 }
 
+type DetectionMatch struct {
+	Type       string     `json:"type"`
+	Name       string     `json:"name,omitempty"`
+	Value      string     `json:"value,omitempty"`
+	Matches    [][]string `json:"matches,omitempty"`
+	Confidence int        `json:"confidence"`
+}
+
 // Match type encapsulates the App information from a match on a document
 type Match struct {
 	AppName           string `json:"app_name"`
 	App               `json:"app"`
-	Matches           [][]string      `json:"matches"`
-	Version           string          `json:"version"`
-	Confidence        int             `json:"confidence"`
-	Categories        []MatchCategory `json:"categories"`
+	Matches           []DetectionMatch `json:"matches"`
+	Version           string           `json:"version"`
+	Confidence        int              `json:"confidence"`
+	Categories        []MatchCategory  `json:"categories"`
 	versionConfidence int
 }
 
@@ -58,9 +68,16 @@ type WebAnalyzer struct {
 	groupDefs GroupsDefinition
 	client    *http.Client
 	browser   *Browser
+
+	jsPaths []string
 }
 
 type DNSResult map[string][]string
+
+type JSResult struct {
+	Value  string
+	Exists bool
+}
 
 func (m *Match) updateVersion(version string, confidence int) {
 
@@ -78,6 +95,26 @@ func (m *Match) updateConfidence(confidence int) {
 	if confidence > m.Confidence {
 		m.Confidence = confidence
 	}
+}
+
+func (m *Match) addDetection(
+	detectionType string,
+	name string,
+	value string,
+	matches [][]string,
+	version string,
+	confidence int,
+) {
+	m.Matches = append(m.Matches, DetectionMatch{
+		Type:       detectionType,
+		Name:       name,
+		Value:      value,
+		Matches:    matches,
+		Confidence: confidence,
+	})
+
+	m.updateConfidence(confidence)
+	m.updateVersion(version, confidence)
 }
 
 // NewWebAnalyzer initializes webanalyzer by passing a reader of the
@@ -547,63 +584,119 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		robotsText = fetchRobots(baseURL, wa.client, job.followRedirect)
 	}
 
+	jsResults := make(map[string]JSResult)
+
+	if wa.browser != nil && !job.forceNotDownload {
+
+		browserCtx, browserCancel := wa.browser.NewTab()
+		defer browserCancel()
+		pageURL := finalURL
+		if pageURL == "" {
+			pageURL = job.URL
+		}
+		err := chromedp.Do(
+			browserCtx,
+			chromedp.Navigate(pageURL),
+			chromedp.WaitReady(chromedp.CSS("body")),
+		)
+		if err == nil {
+			results, err := wa.collectJSResults(browserCtx)
+			if err == nil {
+				jsResults = results
+			}
+		}
+
+	}
+
 	for appname, app := range appDefs {
 
 		findings := Match{
 			App:        app,
 			AppName:    appname,
-			Matches:    make([][]string, 0),
+			Matches:    make([]DetectionMatch, 0),
 			Categories: wa.resolveCategories(app),
 		}
 
-		// check raw html
+		// check raw HTML
 		if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
-			findings.Matches = append(findings.Matches, m...)
-			findings.updateConfidence(c)
-			findings.updateVersion(v, c)
+			findings.addDetection(
+				"html",
+				"",
+				"",
+				m,
+				v,
+				c,
+			)
 		}
 
-		// check response header
-		headerFindings, version, confidence := app.FindInHeaders(headers)
-		findings.Matches = append(findings.Matches, headerFindings...)
-		findings.updateConfidence(confidence)
-		findings.updateVersion(version, confidence)
+		// check response headers
+		app.FindInHeaders(headers, &findings)
 
 		// check url
 		if m, v, c := findMatches(job.URL, app.URLRegex); len(m) > 0 {
-			findings.Matches = append(findings.Matches, m...)
-			findings.updateConfidence(c)
-			findings.updateVersion(v, c)
+			findings.addDetection(
+				"url",
+				"",
+				job.URL,
+				m,
+				v,
+				c,
+			)
+
 		}
 
 		// check text
+
 		if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
-			findings.Matches = append(findings.Matches, m...)
-			findings.updateConfidence(c)
-			findings.updateVersion(v, c)
+			findings.addDetection(
+				"text",
+				"",
+				"",
+				m,
+				v,
+				c,
+			)
 		}
 
 		// check robots.txt
 		if m, v, c := findMatches(robotsText, app.RobotsRegex); len(m) > 0 {
-			findings.Matches = append(findings.Matches, m...)
-			findings.updateConfidence(c)
-			findings.updateVersion(v, c)
+			findings.addDetection(
+				"robots",
+				"",
+				"",
+				m,
+				v,
+				c,
+			)
 		}
 
-		// check script tags
+		// check script sources
 		for _, script := range scriptSources {
-			if m, v, c := findMatches(script, app.ScriptSrcRegex); len(m) > 0 {
-				findings.Matches = append(findings.Matches, m...)
-				findings.updateConfidence(c)
-				findings.updateVersion(v, c)
+			if m, v, c := findMatches(
+				script,
+				app.ScriptSrcRegex,
+			); len(m) > 0 {
+				findings.addDetection(
+					"scriptSrc",
+					"",
+					script,
+					m,
+					v,
+					c,
+				)
 			}
 		}
 
 		// check TLS certificate issuer
 		if m, v, c := findMatches(certIssuer, app.CertIssuerRegex); len(m) > 0 {
-			findings.Matches = append(findings.Matches, m...)
-			findings.updateConfidence(c)
-			findings.updateVersion(v, c)
+			findings.addDetection(
+				"certIssuer",
+				"",
+				certIssuer,
+				m,
+				v,
+				c,
+			)
 		}
 
 		// check meta tags
@@ -623,33 +716,41 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 					continue
 				}
 
-				findings.Matches = append(findings.Matches, matches...)
-				findings.updateConfidence(confidence)
-				findings.updateVersion(version, confidence)
+				findings.addDetection(
+					"meta",
+					metaRegex.Name,
+					content,
+					matches,
+					version,
+					confidence,
+				)
 			}
 		}
 
 		// check cookies
 		for _, cookieRegex := range app.CookieRegex {
-			if _, ok := cookiesMap[cookieRegex.Name]; ok {
-
-				// if there is a regexp set, ensure it matches.
-				// otherwise just add this as a match
-				if cookieRegex.Regexp != nil {
-
-					// only match single AppRegexp on this specific cookie
-					if matches, version, confidence := findMatches(cookiesMap[cookieRegex.Name], []AppRegexp{cookieRegex}); len(matches) > 0 {
-						findings.Matches = append(findings.Matches, matches...)
-						findings.updateConfidence(confidence)
-						findings.updateVersion(version, confidence)
-					}
-
-				} else {
-					findings.Matches = append(findings.Matches, []string{cookieRegex.Name})
-					findings.updateConfidence(cookieRegex.Confidence)
-				}
+			value, ok := cookiesMap[cookieRegex.Name]
+			if !ok {
+				continue
 			}
 
+			m, v, c := findMatches(
+				value,
+				[]AppRegexp{cookieRegex},
+			)
+
+			if len(m) == 0 {
+				continue
+			}
+
+			findings.addDetection(
+				"cookie",
+				cookieRegex.Name,
+				value,
+				m,
+				v,
+				c,
+			)
 		}
 
 		// check DNS
@@ -657,11 +758,43 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			values := dnsResults[recordType]
 
 			for _, value := range values {
-				if m, v, c := findMatches(value, regexes); len(m) > 0 {
-					findings.Matches = append(findings.Matches, m...)
-					findings.updateConfidence(c)
-					findings.updateVersion(v, c)
+				if m, v, c := findMatches(
+					value,
+					regexes,
+				); len(m) > 0 {
+					findings.addDetection(
+						"dns",
+						recordType,
+						value,
+						m,
+						v,
+						c,
+					)
 				}
+			}
+		}
+
+		// check JS properties if browser is enabled
+
+		for _, jsRegex := range app.JSRegex {
+			result, ok := jsResults[jsRegex.Name]
+
+			if !ok || !result.Exists {
+				continue
+			}
+
+			if m, v, c := findMatches(
+				result.Value,
+				[]AppRegexp{jsRegex},
+			); len(m) > 0 {
+				findings.addDetection(
+					"js",
+					jsRegex.Name,
+					result.Value,
+					m,
+					v,
+					c,
+				)
 			}
 		}
 
@@ -684,6 +817,68 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	}
 
 	return apps, links, finalURL, nil
+}
+
+func (wa *WebAnalyzer) collectJSResults(
+	ctx context.Context,
+) (map[string]JSResult, error) {
+
+	results := make(map[string]JSResult)
+
+	checkpoints := []time.Duration{
+		0,
+		500 * time.Millisecond,
+		1 * time.Second,
+		1500 * time.Millisecond,
+	}
+
+	start := time.Now()
+
+	for _, checkpoint := range checkpoints {
+		wait := checkpoint - time.Since(start)
+
+		if wait > 0 {
+			timer := time.NewTimer(wait)
+
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return results, ctx.Err()
+			}
+		}
+
+		// Only check properties that haven't been found yet.
+		missing := make([]string, 0)
+
+		for _, path := range wa.jsPaths {
+			result, ok := results[path]
+
+			if !ok || !result.Exists {
+				missing = append(missing, path)
+			}
+		}
+
+		if len(missing) == 0 {
+			break
+		}
+
+		current, err := wa.browser.GetJSProperties(
+			ctx,
+			missing,
+		)
+		if err != nil {
+			return results, err
+		}
+
+		for path, result := range current {
+			if result.Exists {
+				results[path] = result
+			}
+		}
+	}
+
+	return results, nil
 }
 
 // runs a list of regexes on content
