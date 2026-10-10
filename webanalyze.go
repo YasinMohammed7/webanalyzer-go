@@ -16,13 +16,15 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bobesa/go-domain-util/domainutil"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
 const VERSION = "0.3.9"
 
 var (
-	timeout = 8 * time.Second
+	timeout        = 8 * time.Second
+	browserTimeout = 30 * time.Second
 )
 
 // Result type encapsulates the result information from a given host
@@ -75,8 +77,8 @@ type WebAnalyzer struct {
 type DNSResult map[string][]string
 
 type JSResult struct {
-	Value  string
-	Exists bool
+	Value  string `json:"value"`
+	Exists bool   `json:"exists"`
 }
 
 func (m *Match) updateVersion(version string, confidence int) {
@@ -585,27 +587,74 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	}
 
 	jsResults := make(map[string]JSResult)
+	var xhrURLs []string
 
 	if wa.browser != nil && !job.forceNotDownload {
 
 		browserCtx, browserCancel := wa.browser.NewTab()
 		defer browserCancel()
+
+		// Hard limit for ALL browser work on this page.
+		browserCtx, timeoutCancel := context.WithTimeout(
+			browserCtx,
+			browserTimeout,
+		)
+		defer timeoutCancel()
+
 		pageURL := finalURL
 		if pageURL == "" {
 			pageURL = job.URL
 		}
-		err := chromedp.Do(
+
+		// Register listener before navigation.
+		xhrCollector := wa.browser.CollectXHR(browserCtx)
+
+		// Enable network events.
+		_, browserErr := chromedp.Call(
 			browserCtx,
-			chromedp.Navigate(pageURL),
-			chromedp.WaitReady(chromedp.CSS("body")),
+			network.Enable,
+			network.EnableParams{},
 		)
-		if err == nil {
-			results, err := wa.collectJSResults(browserCtx)
-			if err == nil {
-				jsResults = results
+
+		if browserErr != nil {
+			fmt.Printf(
+				"BROWSER NETWORK ERROR %s: %v\n",
+				pageURL,
+				browserErr,
+			)
+		} else {
+
+			browserErr = chromedp.Do(
+				browserCtx,
+				chromedp.Navigate(pageURL),
+				chromedp.WaitReady(chromedp.CSS("body")),
+			)
+
+			if browserErr != nil {
+				fmt.Printf(
+					"BROWSER NAVIGATION ERROR %s: %v\n",
+					pageURL,
+					browserErr,
+				)
+			} else {
+
+				results, jsErr := wa.collectJSResults(
+					browserCtx,
+				)
+
+				if jsErr != nil {
+					fmt.Printf(
+						"BROWSER JS ERROR %s: %v\n",
+						pageURL,
+						jsErr,
+					)
+				} else {
+					jsResults = results
+				}
+
+				xhrURLs = xhrCollector.URLs()
 			}
 		}
-
 	}
 
 	for appname, app := range appDefs {
@@ -774,6 +823,26 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			}
 		}
 
+		// check XHR/fetch requests
+
+		if len(app.XHRRegex) > 0 {
+			for _, xhrURL := range xhrURLs {
+				if m, v, c := findMatches(
+					xhrURL,
+					app.XHRRegex,
+				); len(m) > 0 {
+					findings.addDetection(
+						"xhr",
+						"",
+						xhrURL,
+						m,
+						v,
+						c,
+					)
+				}
+			}
+		}
+
 		// check JS properties if browser is enabled
 
 		for _, jsRegex := range app.JSRegex {
@@ -800,19 +869,6 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		if len(findings.Matches) > 0 {
 			apps = append(apps, findings)
-
-			// for _, impliedName := range app.Implies {
-
-			// 	if impliedApp, ok := appDefs[impliedName]; ok {
-			// 		f2 := Match{
-			// 			App:     impliedApp,
-			// 			AppName: impliedName,
-			// 			Matches: make([][]string, 0),
-			// 		}
-			// 		apps = append(apps, f2)
-			// 	}
-
-			// }
 		}
 	}
 

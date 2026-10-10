@@ -62,6 +62,7 @@ type App struct {
 	CertIssuerRegex []AppRegexp            `json:"-"`
 	DNSRegex        map[string][]AppRegexp `json:"-"`
 	JSRegex         []AppRegexp            `json:"-"`
+	XHRRegex        []AppRegexp            `json:"-"`
 }
 
 type ProbeRegexp struct {
@@ -400,6 +401,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app.TextRegex = compileRegexes(value.Text)
 		app.RobotsRegex = compileRegexes(value.Robots)
 		app.ProbeRegex = compileProbeRegexes(value.Probe)
+		app.XHRRegex = compileRegexes(value.XHR)
 
 		if value.CertIssuer != "" {
 			if r, ok := compileAppRegexp("", value.CertIssuer); ok {
@@ -500,7 +502,7 @@ func normalizeRegex(pattern string) string {
 // helper regex function to find matches in a string and return the version if applicable
 func compileAppRegexp(name, value string) (AppRegexp, bool) {
 	if value == "" {
-		value = ".*"
+		value = "^.*$"
 	}
 
 	parts := strings.Split(value, "\\;")
