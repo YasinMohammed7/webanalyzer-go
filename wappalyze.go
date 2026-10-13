@@ -63,6 +63,7 @@ type App struct {
 	DNSRegex        map[string][]AppRegexp `json:"-"`
 	JSRegex         []AppRegexp            `json:"-"`
 	XHRRegex        []AppRegexp            `json:"-"`
+	CSSRegex        []AppRegexp            `json:"-"`
 }
 
 type ProbeRegexp struct {
@@ -402,6 +403,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app.RobotsRegex = compileRegexes(value.Robots)
 		app.ProbeRegex = compileProbeRegexes(value.Probe)
 		app.XHRRegex = compileRegexes(value.XHR)
+		app.CSSRegex = compileRegexes(value.CSS)
 
 		if value.CertIssuer != "" {
 			if r, ok := compileAppRegexp("", value.CertIssuer); ok {

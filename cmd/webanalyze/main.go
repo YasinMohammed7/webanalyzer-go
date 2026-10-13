@@ -183,6 +183,8 @@ func main() {
 		log.Printf("warning: %v is older than a week", techsFilename)
 	}
 
+	start := time.Now()
+
 	technologyCount := make(map[string]int)
 
 	collectorWG.Go(func() {
@@ -237,6 +239,9 @@ func main() {
 	wg.Wait()
 	close(resultCh)
 	collectorWG.Wait()
+	elapsed := time.Since(start)
+
+	fmt.Printf("\nTotal execution time: %s\n", elapsed)
 
 	fmt.Printf("\nTotal unique technologies: %d\n", len(technologyCount))
 

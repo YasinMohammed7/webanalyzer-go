@@ -16,6 +16,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bobesa/go-domain-util/domainutil"
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/css"
+	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
@@ -588,6 +591,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	jsResults := make(map[string]JSResult)
 	var xhrURLs []string
+	var cssText string
 
 	if wa.browser != nil && !job.forceNotDownload {
 
@@ -609,33 +613,73 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		// Register listener before navigation.
 		xhrCollector := wa.browser.CollectXHR(browserCtx)
 
-		// Enable network events.
-		_, browserErr := chromedp.Call(
+		cssCollector := wa.browser.CollectCSS(browserCtx)
+
+		var setupErr error
+
+		// Enable Network domain.
+		if _, err := chromedp.Call(
 			browserCtx,
 			network.Enable,
 			network.EnableParams{},
-		)
+		); err != nil {
+			setupErr = fmt.Errorf(
+				"enable network: %w",
+				err,
+			)
+		}
+		// Enable DOM.
+		if setupErr == nil {
+			if _, err := chromedp.Call(
+				browserCtx,
+				dom.Enable,
+				dom.EnableParams{},
+			); err != nil {
+				setupErr = fmt.Errorf(
+					"enable DOM: %w",
+					err,
+				)
+			}
+		}
 
-		if browserErr != nil {
+		// Enable CSS.
+		if setupErr == nil {
+			if _, err := chromedp.Call(
+				browserCtx,
+				css.Enable,
+				cdp.Empty{},
+			); err != nil {
+				setupErr = fmt.Errorf(
+					"enable CSS: %w",
+					err,
+				)
+			}
+		}
+
+		if setupErr != nil {
+
 			fmt.Printf(
-				"BROWSER NETWORK ERROR %s: %v\n",
+				"BROWSER SETUP ERROR %s: %v\n",
 				pageURL,
-				browserErr,
+				setupErr,
 			)
 		} else {
 
-			browserErr = chromedp.Do(
+			// Navigate.
+
+			if err := chromedp.Do(
 				browserCtx,
 				chromedp.Navigate(pageURL),
-				chromedp.WaitReady(chromedp.CSS("body")),
-			)
-
-			if browserErr != nil {
+				chromedp.WaitReady(
+					chromedp.CSS("body"),
+				),
+			); err != nil {
 				fmt.Printf(
 					"BROWSER NAVIGATION ERROR %s: %v\n",
 					pageURL,
-					browserErr,
+					err,
 				)
+
 			} else {
 
 				results, jsErr := wa.collectJSResults(
@@ -651,6 +695,21 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 				} else {
 					jsResults = results
 				}
+
+				// Stop accepting new CSS and finish
+
+				// everything already queued.
+				cssCollector.Stop()
+				if cssErr := cssCollector.Wait(
+					browserCtx,
+				); cssErr != nil {
+					fmt.Printf(
+						"BROWSER CSS ERROR %s: %v\n",
+						pageURL,
+						cssErr,
+					)
+				}
+				cssText = cssCollector.Text()
 
 				xhrURLs = xhrCollector.URLs()
 			}
@@ -867,6 +926,25 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			}
 		}
 
+		// check CSS
+		if len(app.CSSRegex) > 0 {
+
+			if m, v, c := findMatches(
+				cssText,
+				app.CSSRegex,
+			); len(m) > 0 {
+
+				findings.addDetection(
+					"css",
+					"",
+					"",
+					m,
+					v,
+					c,
+				)
+			}
+		}
+
 		if len(findings.Matches) > 0 {
 			apps = append(apps, findings)
 		}
@@ -938,8 +1016,16 @@ func (wa *WebAnalyzer) collectJSResults(
 }
 
 // runs a list of regexes on content
-func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) {
+func findMatches(
+	content string,
+	regexes []AppRegexp,
+) ([][]string, string, int) {
+
 	var m [][]string
+
+	// Deduplicate identical match rows.
+	seen := make(map[string]struct{})
+
 	var version string
 	var confidence int
 
@@ -960,23 +1046,31 @@ func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) 
 		for match != nil {
 			groups := match.Groups()
 
-			row := make([]string, 0, len(groups))
+			row := make(
+				[]string,
+				0,
+				len(groups),
+			)
 
 			for _, group := range groups {
-
 				if len(group.Captures) == 0 {
 					row = append(row, "")
 					continue
 				}
 
-				value := group.String()
-
-				row = append(row, value)
+				row = append(
+					row,
+					group.String(),
+				)
 			}
 
-			matches = append(matches, row)
+			matches = append(
+				matches,
+				row,
+			)
 
 			match, err = r.Regexp.FindNextMatch(match)
+
 			if err != nil {
 				fmt.Printf(
 					"NEXT MATCH ERROR name=%q pattern=%q error=%v\n",
@@ -992,10 +1086,30 @@ func findMatches(content string, regexes []AppRegexp) ([][]string, string, int) 
 			continue
 		}
 
-		m = append(m, matches...)
+		// Deduplicate before adding to final matches.
+		for _, row := range matches {
+			key := strings.Join(
+				row,
+				"\x00",
+			)
+
+			if _, exists := seen[key]; exists {
+				continue
+			}
+
+			seen[key] = struct{}{}
+
+			m = append(
+				m,
+				row,
+			)
+		}
 
 		if r.Version != "" {
-			version = findVersion(matches, r.Version)
+			version = findVersion(
+				matches,
+				r.Version,
+			)
 		}
 
 		if r.Confidence > confidence {
