@@ -50,7 +50,7 @@ type App struct {
 	// Runtime/computed data
 
 	HTMLRegex       []AppRegexp            `json:"-"`
-	ScriptRegex     []AppRegexp            `json:"-"`
+	ScriptsRegex    []AppRegexp            `json:"-"`
 	ScriptSrcRegex  []AppRegexp            `json:"-"`
 	TextRegex       []AppRegexp            `json:"-"`
 	URLRegex        []AppRegexp            `json:"-"`
@@ -396,7 +396,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		app := wa.appDefs[key]
 
 		app.HTMLRegex = compileRegexes(value.HTML)
-		app.ScriptRegex = compileRegexes(value.Scripts)
+		app.ScriptsRegex = compileRegexes(value.Scripts)
 		app.ScriptSrcRegex = compileRegexes(value.ScriptSrc)
 		app.URLRegex = compileRegexes(value.URL)
 		app.TextRegex = compileRegexes(value.Text)

@@ -18,6 +18,7 @@ import (
 	"github.com/bobesa/go-domain-util/domainutil"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
+	"github.com/chromedp/cdproto/debugger"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -592,6 +593,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	jsResults := make(map[string]JSResult)
 	var xhrURLs []string
 	var cssText string
+	var scripts []Script
 
 	if wa.browser != nil && !job.forceNotDownload {
 
@@ -614,6 +616,8 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		xhrCollector := wa.browser.CollectXHR(browserCtx)
 
 		cssCollector := wa.browser.CollectCSS(browserCtx)
+
+		scriptCollector := wa.browser.CollectScripts(browserCtx)
 
 		var setupErr error
 
@@ -651,6 +655,20 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			); err != nil {
 				setupErr = fmt.Errorf(
 					"enable CSS: %w",
+					err,
+				)
+			}
+		}
+
+		// Enable Debugger.
+		if setupErr == nil {
+			if _, err := chromedp.Call(
+				browserCtx,
+				debugger.Enable,
+				debugger.EnableParams{},
+			); err != nil {
+				setupErr = fmt.Errorf(
+					"enable Debugger: %w",
 					err,
 				)
 			}
@@ -710,6 +728,20 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 					)
 				}
 				cssText = cssCollector.Text()
+
+				scriptCollector.Stop()
+
+				if err := scriptCollector.Wait(browserCtx); err != nil {
+
+					fmt.Printf(
+						"BROWSER SCRIPT ERROR %s: %v\n",
+						pageURL,
+						err,
+					)
+
+				}
+
+				scripts = scriptCollector.Scripts()
 
 				xhrURLs = xhrCollector.URLs()
 			}
@@ -942,6 +974,34 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 					v,
 					c,
 				)
+			}
+		}
+
+		// check JavaScript source code
+
+		if len(app.ScriptsRegex) > 0 {
+			for _, script := range scripts {
+				m, v, c := findMatches(
+					string(script.Source),
+					app.ScriptsRegex,
+				)
+
+				if len(m) == 0 {
+					continue
+				}
+
+				findings.addDetection(
+					"script",
+					"",
+					script.URL,
+					m,
+					v,
+					c,
+				)
+
+				// Once this technology matched in one script,
+				// don't scan the remaining scripts for it.
+				break
 			}
 		}
 
