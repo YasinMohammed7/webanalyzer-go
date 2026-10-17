@@ -593,7 +593,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	jsResults := make(map[string]JSResult)
 	var xhrURLs []string
 	var cssText string
-	var scripts []Script
+	var scriptCollector *ScriptCollector
 
 	if wa.browser != nil && !job.forceNotDownload {
 
@@ -617,7 +617,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		cssCollector := wa.browser.CollectCSS(browserCtx)
 
-		scriptCollector := wa.browser.CollectScripts(browserCtx)
+		scriptCollector = wa.browser.CollectScripts(
+			browserCtx,
+			appDefs,
+		)
 
 		var setupErr error
 
@@ -740,8 +743,6 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 					)
 
 				}
-
-				scripts = scriptCollector.Scripts()
 
 				xhrURLs = xhrCollector.URLs()
 			}
@@ -979,30 +980,21 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		// check JavaScript source code
 
-		if len(app.ScriptsRegex) > 0 {
-			for _, script := range scripts {
-				m, v, c := findMatches(
-					string(script.Source),
-					app.ScriptsRegex,
-				)
+		// check JavaScript source-code detections
 
-				if len(m) == 0 {
-					continue
-				}
+		if scriptCollector != nil {
 
+			for _, detection := range scriptCollector.Detections(appname) {
 				findings.addDetection(
 					"script",
 					"",
-					script.URL,
-					m,
-					v,
-					c,
+					detection.URL,
+					detection.Matches,
+					detection.Version,
+					detection.Confidence,
 				)
-
-				// Once this technology matched in one script,
-				// don't scan the remaining scripts for it.
-				break
 			}
+
 		}
 
 		if len(findings.Matches) > 0 {

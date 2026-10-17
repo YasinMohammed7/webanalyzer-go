@@ -9,55 +9,76 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Script represents one JavaScript resource loaded by the browser.
-//
-// Scripts are deliberately kept separate instead of concatenating all
-// JavaScript into one giant string. This allows us to scan each script
-// independently later.
-type Script struct {
-	URL    string
-	Source []byte
+// ScriptDetection contains only the result of scanning one script.
+// The JavaScript source itself is NOT retained.
+type ScriptDetection struct {
+	URL        string
+	Matches    [][]string
+	Version    string
+	Confidence int
 }
 
-// ScriptCollector collects JavaScript responses loaded by Chrome.
+// ScriptCollector receives JavaScript responses, scans them immediately,
+// stores only detections, and then allows the script body to be released.
 type ScriptCollector struct {
 	mu sync.Mutex
 
-	// requestID -> script
-	scripts map[network.RequestID]Script
-
-	// Avoid storing/scanning identical JavaScript bodies more than once.
-	seenBodies map[[32]byte]struct{}
-
-	// requestID -> URL
+	// requestID -> script URL
 	//
-	// RequestWillBeSent tells us that a request is a Script.
-	// LoadingFinished later gives us the RequestID, so we remember
-	// the URL here.
+	// Used only while waiting for LoadingFinished.
 	requests map[network.RequestID]string
 
-	// Tracks GetResponseBody operations that have already started.
+	// Hashes of JavaScript bodies already scanned.
+	//
+	// This prevents scanning identical scripts multiple times.
+	// A SHA-256 hash is only 32 bytes, so this is much cheaper than
+	// retaining the actual JavaScript source.
+	seenBodies map[[32]byte]struct{}
+
+	// appName -> detections
+	//
+	// Indexing by app name means process() can retrieve detections
+	// directly instead of scanning every detection for every app.
+	detections map[string][]ScriptDetection
+
+	// Script regexes grouped by application.
+	scriptRegexes map[string][]AppRegexp
+
+	// Tracks GetResponseBody operations already started.
 	wg sync.WaitGroup
 
-	// Stops the event listeners from accepting new script requests.
-	//
-	// Important:
-	// this only cancels the event-listener context. It does NOT cancel
-	// GetResponseBody calls that are already running.
+	// Cancels only the Network event listeners.
 	cancel context.CancelFunc
 
 	stopOnce sync.Once
 }
 
-func NewScriptCollector() *ScriptCollector {
+// NewScriptCollector creates a collector using the already-compiled
+// "scripts" regexes from the technology definitions.
+func NewScriptCollector(
+	appDefs AppsDefinition,
+) *ScriptCollector {
+
+	scriptRegexes := make(map[string][]AppRegexp)
+
+	// Only include technologies that actually have script detection.
+	for appName, app := range appDefs {
+		if len(app.ScriptsRegex) == 0 {
+			continue
+		}
+
+		scriptRegexes[appName] = app.ScriptsRegex
+	}
+
 	return &ScriptCollector{
-		scripts:    make(map[network.RequestID]Script),
-		seenBodies: make(map[[32]byte]struct{}),
-		requests:   make(map[network.RequestID]string),
+		requests:      make(map[network.RequestID]string),
+		seenBodies:    make(map[[32]byte]struct{}),
+		detections:    make(map[string][]ScriptDetection),
+		scriptRegexes: scriptRegexes,
 	}
 }
 
-// AddRequest remembers that a RequestID belongs to a JavaScript resource.
+// AddRequest remembers the URL belonging to a JavaScript RequestID.
 func (c *ScriptCollector) AddRequest(
 	id network.RequestID,
 	url string,
@@ -71,10 +92,7 @@ func (c *ScriptCollector) AddRequest(
 	c.mu.Unlock()
 }
 
-// TakeRequest returns the URL associated with a request.
-//
-// LoadingFinished should be the final event we need for this RequestID,
-// so remove it from the pending request map immediately.
+// TakeRequest removes and returns a pending JavaScript request.
 func (c *ScriptCollector) TakeRequest(
 	id network.RequestID,
 ) (string, bool) {
@@ -82,21 +100,20 @@ func (c *ScriptCollector) TakeRequest(
 	defer c.mu.Unlock()
 
 	url, exists := c.requests[id]
-	if !exists {
-		return "", false
+
+	if exists {
+		delete(c.requests, id)
 	}
 
-	delete(c.requests, id)
-
-	return url, true
+	return url, exists
 }
 
-// Store saves one JavaScript body.
+// Scan immediately scans one JavaScript body.
 //
-// Identical script bodies are stored only once, even if Chrome loaded
-// the same body from multiple requests/URLs.
-func (c *ScriptCollector) Store(
-	id network.RequestID,
+// The source is NOT stored anywhere in ScriptCollector.
+// Once this function returns and the caller releases its reference,
+// the body becomes eligible for garbage collection.
+func (c *ScriptCollector) Scan(
 	url string,
 	source []byte,
 ) {
@@ -107,60 +124,91 @@ func (c *ScriptCollector) Store(
 	hash := sha256.Sum256(source)
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if _, exists := c.seenBodies[hash]; exists {
+		c.mu.Unlock()
 		return
 	}
 
 	c.seenBodies[hash] = struct{}{}
 
-	c.scripts[id] = Script{
-		URL:    url,
-		Source: source,
-	}
-}
+	c.mu.Unlock()
 
-// Scripts returns a snapshot of all collected JavaScript resources.
-func (c *ScriptCollector) Scripts() []Script {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Convert ONCE per script.
+	content := string(source)
 
-	scripts := make([]Script, 0, len(c.scripts))
+	localDetections := make(
+		map[string][]ScriptDetection,
+	)
 
-	for _, script := range c.scripts {
-		scripts = append(scripts, script)
-	}
+	for appName, regexes := range c.scriptRegexes {
 
-	return scripts
-}
+		matches, version, confidence := findMatches(
+			content,
+			regexes,
+		)
 
-// Count returns the number of unique JavaScript bodies collected.
-func (c *ScriptCollector) Count() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+		if len(matches) == 0 {
+			continue
+		}
 
-	return len(c.scripts)
-}
-
-// Bytes returns the total number of JavaScript bytes collected.
-func (c *ScriptCollector) Bytes() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	total := 0
-
-	for _, script := range c.scripts {
-		total += len(script.Source)
+		localDetections[appName] = append(
+			localDetections[appName],
+			ScriptDetection{
+				URL:        url,
+				Matches:    matches,
+				Version:    version,
+				Confidence: confidence,
+			},
+		)
 	}
 
-	return total
+	if len(localDetections) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+
+	for appName, detections := range localDetections {
+		c.detections[appName] = append(
+			c.detections[appName],
+			detections...,
+		)
+	}
+
+	c.mu.Unlock()
 }
 
-// Stop prevents the collector from accepting any more Network events.
+// Detections returns the detections for one application.
 //
-// Already-started GetResponseBody operations continue running because
-// they use the original browser context, not the event context.
+// Returning a copy prevents callers from depending on the collector's
+// internal slice while collection may still be happening.
+func (c *ScriptCollector) Detections(
+	appName string,
+) []ScriptDetection {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	detections := c.detections[appName]
+
+	if len(detections) == 0 {
+		return nil
+	}
+
+	result := make(
+		[]ScriptDetection,
+		len(detections),
+	)
+
+	copy(result, detections)
+
+	return result
+}
+
+// Stop prevents the collector from accepting new Network events.
+//
+// GetResponseBody operations that have already started continue using
+// the original browser context.
 func (c *ScriptCollector) Stop() {
 	c.stopOnce.Do(func() {
 		if c.cancel != nil {
@@ -169,8 +217,8 @@ func (c *ScriptCollector) Stop() {
 	})
 }
 
-// Wait waits until all GetResponseBody operations that were already
-// started have completed.
+// Wait waits for all GetResponseBody + script scanning operations that
+// have already started.
 func (c *ScriptCollector) Wait(
 	ctx context.Context,
 ) error {
@@ -190,24 +238,20 @@ func (c *ScriptCollector) Wait(
 	}
 }
 
-// CollectScripts starts collecting JavaScript resources loaded by Chrome.
-//
-// There are intentionally two contexts:
-//
-//	eventCtx
-//	    Controls RequestWillBeSent / LoadingFinished listeners.
-//	    Stop() cancels this context so no new scripts are accepted.
-//
-//	ctx
-//	    Original browser context.
-//	    GetResponseBody uses this so requests that already started can
-//	    finish even after Stop() is called.
+// CollectScripts starts listening for JavaScript resources.
 func (b *Browser) CollectScripts(
 	ctx context.Context,
+	appDefs AppsDefinition,
 ) *ScriptCollector {
-	collector := NewScriptCollector()
 
+	collector := NewScriptCollector(appDefs)
+
+	// Separate event context:
+	//
+	// Stop() can stop accepting new Network events without cancelling
+	// GetResponseBody calls already running on ctx.
 	eventCtx, cancel := context.WithCancel(ctx)
+
 	collector.cancel = cancel
 
 	requestEvents := chromedp.Events(
@@ -220,7 +264,10 @@ func (b *Browser) CollectScripts(
 		network.LoadingFinished,
 	)
 
-	// Track JavaScript requests.
+	// ---------------------------------------------------------
+	// Track script requests
+	// ---------------------------------------------------------
+
 	go func() {
 		for event, err := range requestEvents {
 			if err != nil {
@@ -238,7 +285,10 @@ func (b *Browser) CollectScripts(
 		}
 	}()
 
-	// Once a JavaScript resource finishes loading, retrieve its body.
+	// ---------------------------------------------------------
+	// Retrieve + immediately scan finished scripts
+	// ---------------------------------------------------------
+
 	go func() {
 		for event, err := range finishedEvents {
 			if err != nil {
@@ -248,6 +298,7 @@ func (b *Browser) CollectScripts(
 			url, exists := collector.TakeRequest(
 				event.RequestID,
 			)
+
 			if !exists {
 				continue
 			}
@@ -255,6 +306,7 @@ func (b *Browser) CollectScripts(
 			requestID := event.RequestID
 
 			collector.wg.Go(func() {
+
 				result, err := chromedp.Call(
 					ctx,
 					network.GetResponseBody,
@@ -271,11 +323,16 @@ func (b *Browser) CollectScripts(
 					return
 				}
 
-				collector.Store(
-					requestID,
+				// Scan immediately.
+				//
+				// We DO NOT save result.Body in the collector.
+				collector.Scan(
 					url,
 					result.Body,
 				)
+
+				// After this goroutine returns, result.Body is no
+				// longer referenced by us and can be garbage collected.
 			})
 		}
 	}()
