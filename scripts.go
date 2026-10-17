@@ -55,20 +55,7 @@ type ScriptCollector struct {
 
 // NewScriptCollector creates a collector using the already-compiled
 // "scripts" regexes from the technology definitions.
-func NewScriptCollector(
-	appDefs AppsDefinition,
-) *ScriptCollector {
-
-	scriptRegexes := make(map[string][]AppRegexp)
-
-	// Only include technologies that actually have script detection.
-	for appName, app := range appDefs {
-		if len(app.ScriptsRegex) == 0 {
-			continue
-		}
-
-		scriptRegexes[appName] = app.ScriptsRegex
-	}
+func NewScriptCollector(scriptRegexes map[string][]AppRegexp) *ScriptCollector {
 
 	return &ScriptCollector{
 		requests:      make(map[network.RequestID]string),
@@ -76,6 +63,7 @@ func NewScriptCollector(
 		detections:    make(map[string][]ScriptDetection),
 		scriptRegexes: scriptRegexes,
 	}
+
 }
 
 // AddRequest remembers the URL belonging to a JavaScript RequestID.
@@ -239,12 +227,11 @@ func (c *ScriptCollector) Wait(
 }
 
 // CollectScripts starts listening for JavaScript resources.
-func (b *Browser) CollectScripts(
-	ctx context.Context,
-	appDefs AppsDefinition,
-) *ScriptCollector {
+func (b *Browser) CollectScripts(ctx context.Context, scriptRegexes map[string][]AppRegexp) *ScriptCollector {
 
-	collector := NewScriptCollector(appDefs)
+	collector := NewScriptCollector(
+		scriptRegexes,
+	)
 
 	// Separate event context:
 	//

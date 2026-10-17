@@ -75,7 +75,9 @@ type WebAnalyzer struct {
 	client    *http.Client
 	browser   *Browser
 
-	jsPaths []string
+	jsPaths       []string
+	scriptRegexes map[string][]AppRegexp
+	cssRegexes    map[string][]AppRegexp
 }
 
 type DNSResult map[string][]string
@@ -592,7 +594,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	jsResults := make(map[string]JSResult)
 	var xhrURLs []string
-	var cssText string
+	var cssCollector *CSSCollector
 	var scriptCollector *ScriptCollector
 
 	if wa.browser != nil && !job.forceNotDownload {
@@ -615,12 +617,9 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		// Register listener before navigation.
 		xhrCollector := wa.browser.CollectXHR(browserCtx)
 
-		cssCollector := wa.browser.CollectCSS(browserCtx)
+		cssCollector = wa.browser.CollectCSS(browserCtx, wa.cssRegexes)
 
-		scriptCollector = wa.browser.CollectScripts(
-			browserCtx,
-			appDefs,
-		)
+		scriptCollector = wa.browser.CollectScripts(browserCtx, wa.scriptRegexes)
 
 		var setupErr error
 
@@ -730,7 +729,6 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 						cssErr,
 					)
 				}
-				cssText = cssCollector.Text()
 
 				scriptCollector.Stop()
 
@@ -959,31 +957,25 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			}
 		}
 
-		// check CSS
-		if len(app.CSSRegex) > 0 {
-
-			if m, v, c := findMatches(
-				cssText,
-				app.CSSRegex,
-			); len(m) > 0 {
-
+		// check CSS source-code detections
+		if cssCollector != nil {
+			for _, detection := range cssCollector.Detections(
+				appname,
+			) {
 				findings.addDetection(
 					"css",
 					"",
 					"",
-					m,
-					v,
-					c,
+					detection.Matches,
+					detection.Version,
+					detection.Confidence,
 				)
 			}
 		}
 
-		// check JavaScript source code
-
 		// check JavaScript source-code detections
 
 		if scriptCollector != nil {
-
 			for _, detection := range scriptCollector.Detections(appname) {
 				findings.addDetection(
 					"script",

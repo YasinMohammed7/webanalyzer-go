@@ -2,7 +2,6 @@ package webanalyze
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -10,16 +9,29 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// CSSDetection contains only the result of scanning one stylesheet.
+// The CSS source itself is never retained.
+type CSSDetection struct {
+	Matches    [][]string
+	Version    string
+	Confidence int
+}
+
+// CSSCollector retrieves stylesheets, scans them immediately,
+// stores only detections, and releases the CSS source.
 type CSSCollector struct {
 	mu sync.Mutex
 
-	// Actual CSS we've successfully copied from Chrome.
-	sheets map[cdp.StyleSheetID]string
-
-	// Prevent duplicate stylesheet processing.
+	// Prevent processing the same stylesheet more than once.
 	seen map[cdp.StyleSheetID]struct{}
 
-	// StyleSheetAdded → capture worker.
+	// appName -> CSS detections
+	detections map[string][]CSSDetection
+
+	// Precomputed CSS regexes from loadApps().
+	cssRegexes map[string][]AppRegexp
+
+	// StyleSheetAdded -> worker.
 	queue chan cdp.StyleSheetID
 
 	// Caller tells collector to finish.
@@ -28,23 +40,37 @@ type CSSCollector struct {
 	// Collector tells caller it has finished.
 	done chan struct{}
 
-	// Prevent closing stop twice.
 	stopOnce sync.Once
 }
 
-func NewCSSCollector() *CSSCollector {
+func NewCSSCollector(
+	cssRegexes map[string][]AppRegexp,
+) *CSSCollector {
 	return &CSSCollector{
-		sheets: make(map[cdp.StyleSheetID]string),
-		seen:   make(map[cdp.StyleSheetID]struct{}),
+		seen: make(
+			map[cdp.StyleSheetID]struct{},
+		),
 
-		queue: make(chan cdp.StyleSheetID, 128),
+		detections: make(
+			map[string][]CSSDetection,
+		),
+
+		cssRegexes: cssRegexes,
+
+		queue: make(
+			chan cdp.StyleSheetID,
+			128,
+		),
 
 		stop: make(chan struct{}),
 		done: make(chan struct{}),
 	}
 }
 
-func (c *CSSCollector) Queue(id cdp.StyleSheetID) {
+// Queue adds a stylesheet only once.
+func (c *CSSCollector) Queue(
+	id cdp.StyleSheetID,
+) {
 	c.mu.Lock()
 
 	if _, exists := c.seen[id]; exists {
@@ -58,23 +84,86 @@ func (c *CSSCollector) Queue(id cdp.StyleSheetID) {
 
 	select {
 	case c.queue <- id:
+
 	case <-c.stop:
 		return
 	}
 }
 
-func (c *CSSCollector) Store(
-	id cdp.StyleSheetID,
+// Scan scans one stylesheet immediately.
+//
+// The CSS text is never stored in CSSCollector.
+// Once this function returns, the caller can release it.
+func (c *CSSCollector) Scan(
 	text string,
 ) {
 	if text == "" {
 		return
 	}
 
+	localDetections := make(
+		map[string][]CSSDetection,
+	)
+
+	// Do not hold the mutex while regex matching.
+	for appName, regexes := range c.cssRegexes {
+		matches, version, confidence := findMatches(
+			text,
+			regexes,
+		)
+
+		if len(matches) == 0 {
+			continue
+		}
+
+		localDetections[appName] = append(
+			localDetections[appName],
+			CSSDetection{
+				Matches:    matches,
+				Version:    version,
+				Confidence: confidence,
+			},
+		)
+	}
+
+	if len(localDetections) == 0 {
+		return
+	}
+
+	// Only lock while saving the tiny detection results.
+	c.mu.Lock()
+
+	for appName, detections := range localDetections {
+		c.detections[appName] = append(
+			c.detections[appName],
+			detections...,
+		)
+	}
+
+	c.mu.Unlock()
+}
+
+// Detections returns CSS detections for one technology.
+func (c *CSSCollector) Detections(
+	appName string,
+) []CSSDetection {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.sheets[id] = text
+	detections := c.detections[appName]
+
+	if len(detections) == 0 {
+		return nil
+	}
+
+	result := make(
+		[]CSSDetection,
+		len(detections),
+	)
+
+	copy(result, detections)
+
+	return result
 }
 
 func (c *CSSCollector) Stop() {
@@ -95,32 +184,15 @@ func (c *CSSCollector) Wait(
 	}
 }
 
-func (c *CSSCollector) Text() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	var builder strings.Builder
-
-	for _, text := range c.sheets {
-		builder.WriteString(text)
-		builder.WriteByte('\n')
-	}
-
-	return builder.String()
-}
-
-func (c *CSSCollector) Count() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return len(c.sheets)
-}
-
+// CollectCSS starts listening for stylesheets.
 func (b *Browser) CollectCSS(
 	ctx context.Context,
+	cssRegexes map[string][]AppRegexp,
 ) *CSSCollector {
 
-	collector := NewCSSCollector()
+	collector := NewCSSCollector(
+		cssRegexes,
+	)
 
 	events := chromedp.Events(
 		ctx,
@@ -128,7 +200,7 @@ func (b *Browser) CollectCSS(
 	)
 
 	// Producer:
-	// Chrome CSS event → queue stylesheet ID.
+	// Chrome stylesheet event -> queue stylesheet ID.
 	go func() {
 		for event, err := range events {
 			if err != nil {
@@ -146,54 +218,54 @@ func (b *Browser) CollectCSS(
 	}()
 
 	// Consumer:
-	// stylesheet ID → retrieve actual CSS.
+	// stylesheet ID -> retrieve -> scan -> discard.
 	go func() {
 		defer close(collector.done)
+
+		process := func(
+			id cdp.StyleSheetID,
+		) {
+			result, err := chromedp.Call(
+				ctx,
+				css.GetStyleSheetText,
+				css.GetStyleSheetTextParams{
+					StyleSheetID: id,
+				},
+			)
+
+			if err != nil {
+				return
+			}
+
+			if result.Text == "" {
+				return
+			}
+
+			// Scan immediately.
+			collector.Scan(
+				result.Text,
+			)
+
+			// result.Text is not stored.
+			//
+			// After process() returns it becomes
+			// eligible for garbage collection.
+		}
 
 		for {
 			select {
 
 			case id := <-collector.queue:
-				result, err := chromedp.Call(
-					ctx,
-					css.GetStyleSheetText,
-					css.GetStyleSheetTextParams{
-						StyleSheetID: id,
-					},
-				)
-
-				if err != nil {
-					continue
-				}
-
-				collector.Store(
-					id,
-					result.Text,
-				)
+				process(id)
 
 			case <-collector.stop:
 
-				// Finish IDs that were already queued.
+				// Finish anything already queued.
 				for {
 					select {
 
 					case id := <-collector.queue:
-						result, err := chromedp.Call(
-							ctx,
-							css.GetStyleSheetText,
-							css.GetStyleSheetTextParams{
-								StyleSheetID: id,
-							},
-						)
-
-						if err != nil {
-							continue
-						}
-
-						collector.Store(
-							id,
-							result.Text,
-						)
+						process(id)
 
 					default:
 						return

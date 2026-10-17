@@ -391,6 +391,8 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 	}
 
 	jsPaths := make(map[string]struct{})
+	wa.scriptRegexes = make(map[string][]AppRegexp)
+	wa.cssRegexes = make(map[string][]AppRegexp)
 
 	for key, value := range wa.appDefs {
 		app := wa.appDefs[key]
@@ -426,6 +428,14 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		// collect unique JavaScript paths
 		for _, jsRegex := range app.JSRegex {
 			jsPaths[jsRegex.Name] = struct{}{}
+		}
+
+		if len(app.ScriptsRegex) > 0 {
+			wa.scriptRegexes[key] = app.ScriptsRegex
+		}
+
+		if len(app.CSSRegex) > 0 {
+			wa.cssRegexes[key] = app.CSSRegex
 		}
 
 		wa.appDefs[key] = app
