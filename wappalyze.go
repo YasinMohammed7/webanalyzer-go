@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -64,6 +65,7 @@ type App struct {
 	JSRegex         []AppRegexp            `json:"-"`
 	XHRRegex        []AppRegexp            `json:"-"`
 	CSSRegex        []AppRegexp            `json:"-"`
+	DOMRegex        CompiledDOM            `json:"-"`
 }
 
 type ProbeRegexp struct {
@@ -113,6 +115,20 @@ type DOM struct {
 	Value string
 	Array []string
 	Rules map[string]DOMRule
+}
+
+// Add compiled rule structures to your package
+type CompiledDOMRule struct {
+	Selector   string
+	Exists     *AppRegexp
+	Attributes map[string]AppRegexp
+	Properties map[string]AppRegexp
+	Text       *AppRegexp
+}
+
+type CompiledDOM struct {
+	Selectors []string
+	Rules     []CompiledDOMRule
 }
 
 type Group struct {
@@ -196,6 +212,64 @@ func (t *IntArray) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	return fmt.Errorf("expected int or []int, got %s", string(data))
+}
+
+func compileDOM(dom *DOM) CompiledDOM {
+	var cDOM CompiledDOM
+
+	switch dom.Kind {
+	case DOMKindString:
+		if dom.Value != "" {
+			cDOM.Selectors = append(cDOM.Selectors, dom.Value)
+		}
+
+	case DOMKindArray:
+		for _, selector := range dom.Array {
+			if selector != "" {
+				cDOM.Selectors = append(
+					cDOM.Selectors,
+					selector,
+				)
+			}
+		}
+
+	case DOMKindRules:
+		for selector, rule := range dom.Rules {
+			cRule := CompiledDOMRule{
+				Selector: selector,
+			}
+
+			if rule.Exists != "" {
+				if r, ok := compileAppRegexp("", rule.Exists); ok {
+					cRule.Exists = &r
+				}
+			}
+
+			cRule.Attributes = make(map[string]AppRegexp)
+			for attr, pattern := range rule.Attributes {
+				if r, ok := compileAppRegexp(attr, pattern); ok {
+					cRule.Attributes[attr] = r
+				}
+			}
+
+			cRule.Properties = make(map[string]AppRegexp)
+			for prop, pattern := range rule.Properties {
+				if r, ok := compileAppRegexp(prop, pattern); ok {
+					cRule.Properties[prop] = r
+				}
+			}
+
+			if rule.Text != "" {
+				if r, ok := compileAppRegexp("", rule.Text); ok {
+					cRule.Text = &r
+				}
+			}
+
+			cDOM.Rules = append(cDOM.Rules, cRule)
+		}
+	}
+
+	return cDOM
 }
 
 func (app *App) FindInHeaders(
@@ -391,8 +465,11 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 	}
 
 	jsPaths := make(map[string]struct{})
+	domSelectorsMap := make(map[string]struct{})
+
 	wa.scriptRegexes = make(map[string][]AppRegexp)
 	wa.cssRegexes = make(map[string][]AppRegexp)
+	wa.domProperties = make(map[string][]string)
 
 	for key, value := range wa.appDefs {
 		app := wa.appDefs[key]
@@ -438,13 +515,40 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 			wa.cssRegexes[key] = app.CSSRegex
 		}
 
+		if value.DOM != nil {
+			app.DOMRegex = compileDOM(value.DOM)
+			// Collect simple selectors
+			for _, selector := range app.DOMRegex.Selectors {
+				domSelectorsMap[selector] = struct{}{}
+			}
+			// Collect rule-based selectors
+			for _, rule := range app.DOMRegex.Rules {
+				domSelectorsMap[rule.Selector] = struct{}{}
+
+				for propertyName := range rule.Properties {
+
+					if !slices.Contains(wa.domProperties[rule.Selector], propertyName) {
+						wa.domProperties[rule.Selector] = append(
+							wa.domProperties[rule.Selector],
+							propertyName,
+						)
+					}
+				}
+			}
+		}
+
 		wa.appDefs[key] = app
 	}
 
 	wa.jsPaths = make([]string, 0, len(jsPaths))
-
 	for path := range jsPaths {
 		wa.jsPaths = append(wa.jsPaths, path)
+	}
+
+	// POPULATE WA.DOMSELECTORS:
+	wa.domSelectors = make([]string, 0, len(domSelectorsMap))
+	for sel := range domSelectorsMap {
+		wa.domSelectors = append(wa.domSelectors, sel)
 	}
 
 	return nil

@@ -56,6 +56,14 @@ type DetectionMatch struct {
 	Confidence int        `json:"confidence"`
 }
 
+type DOMDetection struct {
+	Selector   string     `json:"selector"`
+	Value      string     `json:"value,omitempty"`
+	Matches    [][]string `json:"matches,omitempty"`
+	Version    string     `json:"version,omitempty"`
+	Confidence int        `json:"confidence"`
+}
+
 // Match type encapsulates the App information from a match on a document
 type Match struct {
 	AppName           string `json:"app_name"`
@@ -76,6 +84,8 @@ type WebAnalyzer struct {
 	browser   *Browser
 
 	jsPaths       []string
+	domSelectors  []string
+	domProperties map[string][]string
 	scriptRegexes map[string][]AppRegexp
 	cssRegexes    map[string][]AppRegexp
 }
@@ -593,6 +603,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	}
 
 	jsResults := make(map[string]JSResult)
+	domResults := make(map[string][]elementData)
 	var xhrURLs []string
 	var cssCollector *CSSCollector
 	var scriptCollector *ScriptCollector
@@ -714,6 +725,13 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 					)
 				} else {
 					jsResults = results
+				}
+
+				dRes, domErr := wa.CollectDOMResults(browserCtx)
+				if domErr != nil {
+					fmt.Printf("BROWSER DOM ERROR %s: %v\n", pageURL, domErr)
+				} else {
+					domResults = dRes
 				}
 
 				// Stop accepting new CSS and finish
@@ -989,6 +1007,21 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		}
 
+		// 2. Check DOM detections via O(1) map matching
+		if len(domResults) > 0 {
+			domDetections := wa.EvaluateApp(app, domResults)
+			for _, dd := range domDetections {
+				findings.addDetection(
+					"dom",
+					dd.Selector,
+					dd.Value,
+					dd.Matches,
+					dd.Version,
+					dd.Confidence,
+				)
+			}
+		}
+
 		if len(findings.Matches) > 0 {
 			apps = append(apps, findings)
 		}
@@ -1057,6 +1090,134 @@ func (wa *WebAnalyzer) collectJSResults(
 	}
 
 	return results, nil
+}
+
+// EvaluateApp matches the raw browser DOM results against a single app's compiled DOM rules
+// EvaluateApp performs O(1) lookups against rawResults using only the selectors this app cares about
+func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData) []DOMDetection {
+	if rawResults == nil {
+		return nil
+	}
+
+	var detections []DOMDetection
+
+	// 1. Check simple string/array selectors (passing selRegex.Pattern so regex/version extraction works)
+	for _, selector := range app.DOMRegex.Selectors {
+		elements, ok := rawResults[selector]
+		if !ok || len(elements) == 0 {
+			continue
+		}
+
+		detections = append(detections, DOMDetection{
+			Selector:   selector,
+			Confidence: 100,
+		})
+	}
+
+	// 2. Check rule-based definitions (exists, text, attributes, properties)
+	for _, rule := range app.DOMRegex.Rules {
+		elements, ok := rawResults[rule.Selector]
+		if !ok || len(elements) == 0 {
+			continue
+		}
+
+		for _, el := range elements {
+			matched := true
+			var bestVersion string
+			var maxConfidence = 0
+			var allMatches [][]string
+
+			// Check 'exists' rule
+			if rule.Exists != nil {
+				m, v, c := findMatches("true", []AppRegexp{*rule.Exists})
+				if len(m) == 0 {
+					matched = false
+					break
+				}
+				allMatches = append(allMatches, m...)
+				if v != "" {
+					bestVersion = v
+				}
+				if c > maxConfidence {
+					maxConfidence = c
+				}
+			}
+
+			// Check 'text' rule
+			if rule.Text != nil {
+				m, v, c := findMatches(el.Text, []AppRegexp{*rule.Text})
+				if len(m) == 0 {
+					matched = false
+					break
+				}
+				allMatches = append(allMatches, m...)
+				if v != "" {
+					bestVersion = v
+				}
+				if c > maxConfidence {
+					maxConfidence = c
+				}
+			}
+
+			// Check 'attributes' rules
+			for attrName, attrRegexp := range rule.Attributes {
+				attrVal, attrExists := el.Attributes[attrName]
+				if !attrExists {
+					matched = false
+					break
+				}
+				m, v, c := findMatches(attrVal, []AppRegexp{attrRegexp})
+				if len(m) == 0 {
+					matched = false
+					break
+				}
+				allMatches = append(allMatches, m...)
+				if v != "" {
+					bestVersion = v
+				}
+				if c > maxConfidence {
+					maxConfidence = c
+				}
+			}
+
+			// Check 'properties' rules
+			for propName, propRegexp := range rule.Properties {
+				propVal, propExists := el.Properties[propName]
+				if !propExists {
+					matched = false
+					break
+				}
+				m, v, c := findMatches(propVal, []AppRegexp{propRegexp})
+				if len(m) == 0 {
+					matched = false
+					break
+				}
+				allMatches = append(allMatches, m...)
+				if v != "" {
+					bestVersion = v
+				}
+				if c > maxConfidence {
+					maxConfidence = c
+				}
+			}
+
+			if matched {
+				if maxConfidence == 0 {
+					maxConfidence = 100
+				}
+				detections = append(detections, DOMDetection{
+					Selector:   rule.Selector,
+					Value:      el.Text,
+					Matches:    allMatches,
+					Version:    bestVersion,
+					Confidence: maxConfidence,
+				})
+				break
+			}
+		}
+	}
+
+	return detections
 }
 
 // runs a list of regexes on content
