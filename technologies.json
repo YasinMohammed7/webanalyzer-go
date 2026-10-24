@@ -9289,6 +9289,23 @@
   "website": "https://www.audiohook.com",
   "icon": "Audiohook.svg"
  },
+ "Audion": {
+  "description": "Audion is a digital audio advertising company; its Audion360 podcast player is embedded on publisher pages and loads from 360.audion.fm.",
+  "cats": [
+   36
+  ],
+  "dom": [
+   "#audion360-podcast-player-init, .audion-reader"
+  ],
+  "scriptSrc": [
+   "\\.360\\.audion\\.fm/"
+  ],
+  "xhr": [
+   "\\.audion\\.fm"
+  ],
+  "website": "https://www.audion.fm",
+  "icon": "Audion.png"
+ },
  "Auglio": {
   "description": "Auglio is a virtual try-on tool enabling customers to try products using camera and augmented reality before the purchase.",
   "saas": true,
@@ -9934,6 +9951,19 @@
   },
   "website": "https://www.avanser.com",
   "icon": "Avanser.svg"
+ },
+ "AvantisVideo": {
+  "cats": [
+   36
+  ],
+  "js": {
+   "avantisJS": ""
+  },
+  "scripts": [
+   "//cdn\\.avantisvideo\\.com"
+  ],
+  "website": "https://www.avantisvideo.com",
+  "icon": "AvantisVideo.png"
  },
  "Avasam": {
   "description": "Avasam is a platform that provides dropship suppliers with channel integration and automation tools to connect and manage online stores.",
@@ -14170,6 +14200,16 @@
   ],
   "website": "https://bontii.dk",
   "icon": "Bontii.svg"
+ },
+ "Book Like A Boss": {
+  "cats": [
+   72
+  ],
+  "dom": [
+   "a[href*='bookme.name']"
+  ],
+  "website": "https://www.booklikeaboss.com/",
+  "icon": "Book Like A Boss.png"
  },
  "Book N Pay": {
   "description": "Book N Pay is a platform for booking and paying for various services and activities.",
@@ -22286,6 +22326,24 @@
   },
   "website": "https://cloudsuite.com",
   "icon": "CloudSuite.svg"
+ },
+ "Cloudbac": {
+  "description": "Cloudbac is a SaaS website builder and hosting platform for businesses.",
+  "saas": true,
+  "cats": [
+   1,
+   51
+  ],
+  "headers": {
+   "X-Powered-By": "^Cloudbac$"
+  },
+  "meta": {
+   "generator": [
+    "^Cloudbac$"
+   ]
+  },
+  "website": "https://www.cloudbac.com",
+  "icon": "Cloudbac.svg"
  },
  "Cloudbeds": {
   "description": "Cloudbeds is a cloud-based hotel management platform which includes tools for managing reservations, availability, rates, distribution channels, payments, guests, housekeeping, and more.",
@@ -36507,6 +36565,33 @@
   "website": "https://fabric.inc",
   "icon": "Fabric.svg"
  },
+ "Face Age": {
+  "description": "Face Age is an AI-powered JavaScript SDK for facial skin analysis.",
+  "oss": true,
+  "saas": true,
+  "cats": [
+   59,
+   112
+  ],
+  "js": {
+   "FaceAge.prototype.render": ""
+  },
+  "dom": [
+   ".faceAge-main-module",
+   "iframe#FaceAge-module-iframe"
+  ],
+  "scriptSrc": [
+   "cdn\\.jsdelivr\\.net/npm/face-age@([\\d.]+)\\;version:\\1",
+   "cdn\\.jsdelivr\\.net/npm/face-age(?:/|$)",
+   "unpkg\\.com/face-age@([\\d.]+)\\;version:\\1",
+   "unpkg\\.com/face-age(?:/|$)"
+  ],
+  "xhr": [
+   "core\\.getfaceage\\.com"
+  ],
+  "website": "https://getfaceage.com",
+  "icon": "FaceAge.svg"
+ },
  "Facebook Ads": {
   "description": "Facebook Ads is an online advertising platform developed by Facebook.",
   "saas": true,
@@ -47274,6 +47359,38 @@
   },
   "website": "https://www.hackerone.com",
   "icon": "HackerOne.svg"
+ },
+ "Hackle": {
+  "description": "Hackle is an experimentation and growth platform providing A/B testing, feature flags, product analytics, and behavioral messaging.",
+  "saas": true,
+  "cats": [
+   74,
+   85,
+   10,
+   32,
+   53
+  ],
+  "js": {
+   "HACKLE_PRELOAD_CLIENT": "",
+   "Hackle": "",
+   "HacklePlugin": "",
+   "_hackle": "",
+   "_hackleCafe24App": "",
+   "hackleClient": ""
+  },
+  "html": [
+   "HACKLE_SDK_KEY"
+  ],
+  "scriptSrc": [
+   "@hackler/javascript-sdk@([\\d.]+)/\\;version:\\1",
+   "@hackler/javascript-sdk",
+   "\\.hackle\\.io/"
+  ],
+  "xhr": [
+   "(?:sdk-api|client-sdk|event-api|event|monitoring|static|cdn\\d*)\\.hackle\\.io"
+  ],
+  "website": "https://hackle.io",
+  "icon": "Hackle.png"
  },
  "Haddock": {
   "description": "Haddock is a tool for automatically generating documentation from annotated Haskell source code.",
@@ -101434,6 +101551,16 @@
   "website": "https://www.smartemailing.cz",
   "icon": "SmartEmailing.svg"
  },
+ "SmartFrame": {
+  "cats": [
+   95
+  ],
+  "html": [
+   "\u003clink rel=\"dns-prefetch\" href=\"//static\\.smartframe\\.io\""
+  ],
+  "website": "https://smartframe.io",
+  "icon": "SmartFrame.png"
+ },
  "SmartFront": {
   "description": "SmartFront is a multi-tenant headless storefront and admin platform that runs on top of an existing commerce backend such as Magento, Shopify, WooCommerce, Shopware, BigCommerce, PrestaShop, OpenCart, Sylius or Medusa, or on its own native commerce.",
   "saas": true,
@@ -102315,6 +102442,21 @@
   "website": "https://socedoagency.com",
   "icon": "Socedo.svg"
  },
+ "SociableKIT": {
+  "description": "Sociable kit",
+  "cats": [
+   5
+  ],
+  "html": [
+   "\u003ciframe[^\u003e]*src=[^\u003e]*widgets\\.sociablekit\\.com",
+   "\u003cimg[^\u003e]*src=[^\u003e]*images\\.sociablekit\\.com"
+  ],
+  "scriptSrc": [
+   "widgets\\.sociablekit\\.com"
+  ],
+  "website": "https://www.sociablekit.com/",
+  "icon": "SociableKIT.png"
+ },
  "Social Pinpoint": {
   "description": "Social Pinpoint is a comprehensive online platform that facilitates meaningful and accessible engagement opportunities that bring your community together.",
   "saas": true,
@@ -102968,6 +103110,16 @@
   ],
   "website": "https://www.sonarqube.org/",
   "icon": "Sonar.svg"
+ },
+ "Sonares": {
+  "cats": [
+   5
+  ],
+  "html": [
+   "\u003ciframe [^\u003e]*src=[^\u003e]*content\\.sonares\\.org/[^\"/]+"
+  ],
+  "website": "https://sonares.org/",
+  "icon": "Sonares.png"
  },
  "Sonetel Chat": {
   "description": "Sonetel is a website chat system that enables online communication between businesses and their website visitors.",
@@ -104462,6 +104614,16 @@
   ],
   "website": "https://www.sprocket.bz",
   "icon": "Sprocket.svg"
+ },
+ "SproutStudio": {
+  "cats": [
+   72
+  ],
+  "dom": [
+   "iframe[src*='.sproutstudio.com']"
+  ],
+  "website": "https://getsproutstudio.com",
+  "icon": "SproutStudio.png"
  },
  "Spruce": {
   "description": "Spruce is a digital healthcare platform that provides virtual medical services and tools for managing patient care.",
@@ -109701,6 +109863,16 @@
   "website": "https://www.taurosmedia.com",
   "icon": "TaurosMedia.svg"
  },
+ "Tave": {
+  "cats": [
+   72
+  ],
+  "dom": [
+   "iframe[src*='tave.com']"
+  ],
+  "website": "https://tave.com",
+  "icon": "Tave.png"
+ },
  "Tawk.to": {
   "description": "Tawk.to is a free messaging app to monitor and chat with the visitors to a website, mobile app.",
   "saas": true,
@@ -110289,6 +110461,11 @@
   "description": "Terminalfour is a digital engagement and web content management platform for higher education.",
   "cats": [
    1
+  ],
+  "html": [
+   "\u003c[^\u003e]+terminalfour\\.net/",
+   "\u003c[^\u003e]+t4Edit-page",
+   "\u003c[^\u003e]+/terminalfour/page/(?:section|content|directEdit)"
   ],
   "meta": {
    "generator": [
@@ -113498,6 +113675,16 @@
   "website": "https://www.traek.io",
   "icon": "Traek.svg"
  },
+ "Traffective": {
+  "cats": [
+   36
+  ],
+  "js": {
+   "traffectiveLib": ""
+  },
+  "website": "https://www.traffective.com",
+  "icon": "Traffective.png"
+ },
  "TrafficGuard": {
   "description": "TrafficGuard is a platform that protects digital marketing campaigns by detecting and preventing invalid traffic and ad fraud.",
   "saas": true,
@@ -114757,6 +114944,17 @@
   ],
   "website": "https://tutorcruncher.com",
   "icon": "TutorCruncher.svg"
+ },
+ "Tutorbird": {
+  "cats": [
+   72
+  ],
+  "dom": [
+   "iframe[src*='.tutorbird.com']",
+   "a[href*='.tutorbird.com']"
+  ],
+  "website": "https://tutorbird.com",
+  "icon": "Tutorbird.png"
  },
  "Twenty Eleven": {
   "description": "Twenty Eleven is the default WordPress theme for 2011.",
@@ -117844,6 +118042,16 @@
   ],
   "website": "https://www.vagaro.com/pro/schedulicity",
   "icon": "Vagaro.svg"
+ },
+ "Valorsic Studio": {
+  "cats": [
+   59
+  ],
+  "dom": {
+   "[data-valorsic-studio]": {}
+  },
+  "website": "https://valorsic.studio",
+  "icon": "Valorsic Studio.png"
  },
  "Valuad": {
   "description": "Valuad is a platform that provides algorithm-based header bidding for publishers to optimize advertising revenue.",
@@ -125376,9 +125584,6 @@
    "wp-embed\\.min\\.js",
    "wp-static\\.assets\\.sh/"
   ],
-  "scripts": [
-   "/wp-content"
-  ],
   "website": "https://wordpress.org",
   "icon": "WordPress.svg"
  },
@@ -127730,6 +127935,28 @@
   "website": "https://youcanpay.com",
   "icon": "YouCan Pay.svg"
  },
+ "YouDraw": {
+  "description": "YouDraw is a Brazilian ecommerce and print-on-demand platform with hosted storefronts (YD Store).",
+  "saas": true,
+  "pricing": [
+   "freemium",
+   "low",
+   "recurring"
+  ],
+  "cats": [
+   6
+  ],
+  "headers": {
+   "X-Generator": "^YouDraw"
+  },
+  "meta": {
+   "generator": [
+    "^YouDraw"
+   ]
+  },
+  "website": "https://youdraw.com.br",
+  "icon": "YouDraw.png"
+ },
  "YouLead": {
   "description": "YouLead is a sales and marketing automation system from Poland that helps businesses manage leads, streamline customer engagement, and optimize marketing workflows through integrated digital tools.",
   "saas": true,
@@ -128571,6 +128798,23 @@
   ],
   "website": "https://www.zendesk.com/platform/conversations",
   "icon": "Zendesk.svg"
+ },
+ "Zendesk Widget": {
+  "cats": [
+   5
+  ],
+  "js": {
+   "zEACLoaded": "",
+   "zEmbed": ""
+  },
+  "dom": [
+   "script#ze-snippet"
+  ],
+  "scriptSrc": [
+   "static\\.zdassets\\.com/ekr/snippet\\.js"
+  ],
+  "website": "https://developer.zendesk.com",
+  "icon": "Zendesk Widget.png"
  },
  "Zenfolio": {
   "description": "Zenfolio is a photography website builder.",
@@ -129524,6 +129768,19 @@
   "website": "https://www.zoom.com",
   "icon": "Zoom.png"
  },
+ "Zoomd": {
+  "cats": [
+   36
+  ],
+  "js": {
+   "Zoomd": ""
+  },
+  "scripts": [
+   "sphereup\\.com/zoomd"
+  ],
+  "website": "https://zoomd.com",
+  "icon": "Zoomd.png"
+ },
  "Zoominfo": {
   "description": "ZoomInfo provides actionable B2B contact and company information for sales and marketing teams.",
   "saas": true,
@@ -130049,6 +130306,16 @@
   "website": "https://animejs.com/",
   "icon": "anime.js.svg"
  },
+ "audienzz": {
+  "cats": [
+   1
+  ],
+  "js": {
+   "audienzz": ""
+  },
+  "website": "https://audienzz.ch",
+  "icon": "audienzz.png"
+ },
  "augmented-ui": {
   "description": "augmented-ui is a UI framework inspired by cyberpunk and sci-fi.",
   "oss": true,
@@ -130196,6 +130463,16 @@
   ],
   "website": "https://bdok.ir",
   "icon": "bdok.svg"
+ },
+ "bet365": {
+  "cats": [
+   19
+  ],
+  "html": [
+   "\u003ca [^\u003e]*href=['\"]http[s]?://www\\.bet365"
+  ],
+  "website": "https://www.bet365affiliates.com",
+  "icon": "bet365.png"
  },
  "biskoui": {
   "description": "biskoui is a Swiss platform designed to manage digital consent across services and technologies beyond traditional cookie-based methods.",
