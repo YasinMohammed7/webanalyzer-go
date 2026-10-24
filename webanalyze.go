@@ -790,11 +790,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		app.FindInHeaders(headers, &findings)
 
 		// check url
-		if m, v, c := findMatches(job.URL, app.URLRegex); len(m) > 0 {
+		if m, v, c := findMatches(finalURL, app.URLRegex); len(m) > 0 {
 			findings.addDetection(
 				"url",
 				"",
-				job.URL,
+				finalURL,
 				m,
 				v,
 				c,
