@@ -68,6 +68,12 @@ type App struct {
 	DOMRegex        CompiledDOM            `json:"-"`
 }
 
+type AppsIndex struct {
+	Initial            []string
+	RequiresByTech     map[string][]string
+	RequiresByCategory map[int][]string
+}
+
 type ProbeRegexp struct {
 	Path       string
 	Regexp     AppRegexp
@@ -471,6 +477,12 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 	wa.cssRegexes = make(map[string][]AppRegexp)
 	wa.domProperties = make(map[string][]string)
 
+	wa.appsIndex = AppsIndex{
+		Initial:            make([]string, 0),
+		RequiresByTech:     make(map[string][]string),
+		RequiresByCategory: make(map[int][]string),
+	}
+
 	for key, value := range wa.appDefs {
 		app := wa.appDefs[key]
 
@@ -538,6 +550,22 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		}
 
 		wa.appDefs[key] = app
+
+		// Build the indexes.
+		if len(app.Requires) == 0 && len(app.RequiresCategory) == 0 {
+			wa.appsIndex.Initial = append(wa.appsIndex.Initial, key)
+		}
+
+		for _, requiredTech := range app.Requires {
+			wa.appsIndex.RequiresByTech[requiredTech] =
+				append(wa.appsIndex.RequiresByTech[requiredTech], key)
+		}
+
+		for _, categoryID := range app.RequiresCategory {
+			wa.appsIndex.RequiresByCategory[categoryID] =
+				append(wa.appsIndex.RequiresByCategory[categoryID], key)
+		}
+
 	}
 
 	wa.jsPaths = make([]string, 0, len(jsPaths))

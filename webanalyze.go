@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +83,7 @@ type WebAnalyzer struct {
 	groupDefs GroupsDefinition
 	client    *http.Client
 	browser   *Browser
+	appsIndex AppsIndex
 
 	jsPaths       []string
 	domSelectors  []string
@@ -501,6 +503,283 @@ func fetchRobots(
 	return string(body)
 }
 
+func (wa *WebAnalyzer) detectApp(
+	appname string,
+	app App,
+	html string,
+	headers http.Header,
+	finalURL string,
+	pageText string,
+	robotsText string,
+	scriptSources []string,
+	certIssuer string,
+	metaTags map[string][]string,
+	cookiesMap map[string]string,
+	dnsResults map[string][]string,
+	xhrURLs []string,
+	jsResults map[string]JSResult,
+	cssCollector *CSSCollector,
+	scriptCollector *ScriptCollector,
+	domResults map[string][]elementData,
+) Match {
+	findings := Match{
+		App:        app,
+		AppName:    appname,
+		Matches:    make([]DetectionMatch, 0),
+		Categories: wa.resolveCategories(app),
+	}
+
+	// check raw HTML
+	if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
+		findings.addDetection(
+			"html",
+			"",
+			"",
+			m,
+			v,
+			c,
+		)
+	}
+
+	// check response headers
+	app.FindInHeaders(headers, &findings)
+
+	// check url
+	if m, v, c := findMatches(finalURL, app.URLRegex); len(m) > 0 {
+		findings.addDetection(
+			"url",
+			"",
+			finalURL,
+			m,
+			v,
+			c,
+		)
+
+	}
+
+	// check text
+
+	if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
+		findings.addDetection(
+			"text",
+			"",
+			"",
+			m,
+			v,
+			c,
+		)
+	}
+
+	// check robots.txt
+	if m, v, c := findMatches(robotsText, app.RobotsRegex); len(m) > 0 {
+		findings.addDetection(
+			"robots",
+			"",
+			"",
+			m,
+			v,
+			c,
+		)
+	}
+
+	// check script sources
+	for _, script := range scriptSources {
+		if m, v, c := findMatches(
+			script,
+			app.ScriptSrcRegex,
+		); len(m) > 0 {
+			findings.addDetection(
+				"scriptSrc",
+				"",
+				script,
+				m,
+				v,
+				c,
+			)
+		}
+	}
+
+	// check TLS certificate issuer
+	if m, v, c := findMatches(certIssuer, app.CertIssuerRegex); len(m) > 0 {
+		findings.addDetection(
+			"certIssuer",
+			"",
+			certIssuer,
+			m,
+			v,
+			c,
+		)
+	}
+
+	// check meta tags
+	for _, metaRegex := range app.MetaRegex {
+		contents, ok := metaTags[strings.ToLower(metaRegex.Name)]
+		if !ok {
+			continue
+		}
+
+		for _, content := range contents {
+			matches, version, confidence := findMatches(
+				content,
+				[]AppRegexp{metaRegex},
+			)
+
+			if len(matches) == 0 {
+				continue
+			}
+
+			findings.addDetection(
+				"meta",
+				metaRegex.Name,
+				content,
+				matches,
+				version,
+				confidence,
+			)
+		}
+	}
+
+	// check cookies
+	for _, cookieRegex := range app.CookieRegex {
+		value, ok := cookiesMap[cookieRegex.Name]
+		if !ok {
+			continue
+		}
+
+		m, v, c := findMatches(
+			value,
+			[]AppRegexp{cookieRegex},
+		)
+
+		if len(m) == 0 {
+			continue
+		}
+
+		findings.addDetection(
+			"cookie",
+			cookieRegex.Name,
+			value,
+			m,
+			v,
+			c,
+		)
+	}
+
+	// check DNS
+	for recordType, regexes := range app.DNSRegex {
+		values := dnsResults[recordType]
+
+		for _, value := range values {
+			if m, v, c := findMatches(
+				value,
+				regexes,
+			); len(m) > 0 {
+				findings.addDetection(
+					"dns",
+					recordType,
+					value,
+					m,
+					v,
+					c,
+				)
+			}
+		}
+	}
+
+	// check XHR/fetch requests
+
+	if len(app.XHRRegex) > 0 {
+		for _, xhrURL := range xhrURLs {
+			if m, v, c := findMatches(
+				xhrURL,
+				app.XHRRegex,
+			); len(m) > 0 {
+				findings.addDetection(
+					"xhr",
+					"",
+					xhrURL,
+					m,
+					v,
+					c,
+				)
+			}
+		}
+	}
+
+	// check JS properties if browser is enabled
+
+	for _, jsRegex := range app.JSRegex {
+		result, ok := jsResults[jsRegex.Name]
+
+		if !ok || !result.Exists {
+			continue
+		}
+
+		if m, v, c := findMatches(
+			result.Value,
+			[]AppRegexp{jsRegex},
+		); len(m) > 0 {
+			findings.addDetection(
+				"js",
+				jsRegex.Name,
+				result.Value,
+				m,
+				v,
+				c,
+			)
+		}
+	}
+
+	// check CSS source-code detections
+	if cssCollector != nil {
+		for _, detection := range cssCollector.Detections(
+			appname,
+		) {
+			findings.addDetection(
+				"css",
+				"",
+				"",
+				detection.Matches,
+				detection.Version,
+				detection.Confidence,
+			)
+		}
+	}
+
+	// check JavaScript source-code detections
+
+	if scriptCollector != nil {
+		for _, detection := range scriptCollector.Detections(appname) {
+			findings.addDetection(
+				"script",
+				"",
+				detection.URL,
+				detection.Matches,
+				detection.Version,
+				detection.Confidence,
+			)
+		}
+
+	}
+
+	// 2. Check DOM detections via O(1) map matching
+	if len(domResults) > 0 {
+		domDetections := wa.EvaluateApp(app, domResults)
+		for _, dd := range domDetections {
+			findings.addDetection(
+				"dom",
+				dd.Selector,
+				dd.Value,
+				dd.Matches,
+				dd.Version,
+				dd.Confidence,
+			)
+		}
+	}
+
+	return findings
+}
+
 // do http request and analyze response
 func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []string, string, error) {
 	var apps = make([]Match, 0)
@@ -765,267 +1044,446 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 	}
 
-	for appname, app := range appDefs {
+	queue := []string{}
 
-		findings := Match{
-			App:        app,
-			AppName:    appname,
-			Matches:    make([]DetectionMatch, 0),
-			Categories: wa.resolveCategories(app),
+	queued := make(map[string]struct{})
+	detectedTechnologies := make(map[string]struct{})
+	notDetected := make(map[string]struct{})
+
+	for _, appname := range wa.appsIndex.Initial {
+
+		app, ok := appDefs[appname]
+		if !ok {
+			continue
 		}
 
-		// check raw HTML
-		if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
-			findings.addDetection(
-				"html",
-				"",
-				"",
-				m,
-				v,
-				c,
+		findings := wa.detectApp(
+			appname, app,
+			html, headers, finalURL, pageText, robotsText,
+			scriptSources, certIssuer, metaTags, cookiesMap,
+			dnsResults, xhrURLs, jsResults,
+			cssCollector, scriptCollector, domResults,
+		)
+
+		if len(findings.Matches) == 0 {
+			notDetected[appname] = struct{}{}
+			continue
+		}
+
+		detectedTechnologies[appname] = struct{}{}
+		apps = append(apps, findings)
+
+		requires := wa.appsIndex.RequiresByTech[appname]
+
+		var requiresByCategory []string
+
+		for _, categoryID := range app.Cats {
+			requiresByCategory = append(
+				requiresByCategory,
+				wa.appsIndex.RequiresByCategory[categoryID]...,
 			)
 		}
 
-		// check response headers
-		app.FindInHeaders(headers, &findings)
+		dependents := make([]string, 0, len(requires)+len(requiresByCategory))
+		dependents = append(dependents, requires...)
+		dependents = append(dependents, requiresByCategory...)
 
-		// check url
-		if m, v, c := findMatches(finalURL, app.URLRegex); len(m) > 0 {
-			findings.addDetection(
-				"url",
-				"",
-				finalURL,
-				m,
-				v,
-				c,
-			)
-
-		}
-
-		// check text
-
-		if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
-			findings.addDetection(
-				"text",
-				"",
-				"",
-				m,
-				v,
-				c,
-			)
-		}
-
-		// check robots.txt
-		if m, v, c := findMatches(robotsText, app.RobotsRegex); len(m) > 0 {
-			findings.addDetection(
-				"robots",
-				"",
-				"",
-				m,
-				v,
-				c,
-			)
-		}
-
-		// check script sources
-		for _, script := range scriptSources {
-			if m, v, c := findMatches(
-				script,
-				app.ScriptSrcRegex,
-			); len(m) > 0 {
-				findings.addDetection(
-					"scriptSrc",
-					"",
-					script,
-					m,
-					v,
-					c,
-				)
-			}
-		}
-
-		// check TLS certificate issuer
-		if m, v, c := findMatches(certIssuer, app.CertIssuerRegex); len(m) > 0 {
-			findings.addDetection(
-				"certIssuer",
-				"",
-				certIssuer,
-				m,
-				v,
-				c,
-			)
-		}
-
-		// check meta tags
-		for _, metaRegex := range app.MetaRegex {
-			contents, ok := metaTags[strings.ToLower(metaRegex.Name)]
-			if !ok {
+		for _, dependent := range dependents {
+			if _, exists := detectedTechnologies[dependent]; exists {
 				continue
 			}
 
-			for _, content := range contents {
-				matches, version, confidence := findMatches(
-					content,
-					[]AppRegexp{metaRegex},
-				)
-
-				if len(matches) == 0 {
-					continue
-				}
-
-				findings.addDetection(
-					"meta",
-					metaRegex.Name,
-					content,
-					matches,
-					version,
-					confidence,
-				)
-			}
-		}
-
-		// check cookies
-		for _, cookieRegex := range app.CookieRegex {
-			value, ok := cookiesMap[cookieRegex.Name]
-			if !ok {
+			if _, exists := notDetected[dependent]; exists {
 				continue
 			}
 
-			m, v, c := findMatches(
-				value,
-				[]AppRegexp{cookieRegex},
-			)
-
-			if len(m) == 0 {
+			if _, exists := queued[dependent]; exists {
 				continue
 			}
 
-			findings.addDetection(
-				"cookie",
-				cookieRegex.Name,
-				value,
-				m,
-				v,
-				c,
-			)
-		}
-
-		// check DNS
-		for recordType, regexes := range app.DNSRegex {
-			values := dnsResults[recordType]
-
-			for _, value := range values {
-				if m, v, c := findMatches(
-					value,
-					regexes,
-				); len(m) > 0 {
-					findings.addDetection(
-						"dns",
-						recordType,
-						value,
-						m,
-						v,
-						c,
-					)
-				}
-			}
-		}
-
-		// check XHR/fetch requests
-
-		if len(app.XHRRegex) > 0 {
-			for _, xhrURL := range xhrURLs {
-				if m, v, c := findMatches(
-					xhrURL,
-					app.XHRRegex,
-				); len(m) > 0 {
-					findings.addDetection(
-						"xhr",
-						"",
-						xhrURL,
-						m,
-						v,
-						c,
-					)
-				}
-			}
-		}
-
-		// check JS properties if browser is enabled
-
-		for _, jsRegex := range app.JSRegex {
-			result, ok := jsResults[jsRegex.Name]
-
-			if !ok || !result.Exists {
-				continue
-			}
-
-			if m, v, c := findMatches(
-				result.Value,
-				[]AppRegexp{jsRegex},
-			); len(m) > 0 {
-				findings.addDetection(
-					"js",
-					jsRegex.Name,
-					result.Value,
-					m,
-					v,
-					c,
-				)
-			}
-		}
-
-		// check CSS source-code detections
-		if cssCollector != nil {
-			for _, detection := range cssCollector.Detections(
-				appname,
-			) {
-				findings.addDetection(
-					"css",
-					"",
-					"",
-					detection.Matches,
-					detection.Version,
-					detection.Confidence,
-				)
-			}
-		}
-
-		// check JavaScript source-code detections
-
-		if scriptCollector != nil {
-			for _, detection := range scriptCollector.Detections(appname) {
-				findings.addDetection(
-					"script",
-					"",
-					detection.URL,
-					detection.Matches,
-					detection.Version,
-					detection.Confidence,
-				)
-			}
-
-		}
-
-		// 2. Check DOM detections via O(1) map matching
-		if len(domResults) > 0 {
-			domDetections := wa.EvaluateApp(app, domResults)
-			for _, dd := range domDetections {
-				findings.addDetection(
-					"dom",
-					dd.Selector,
-					dd.Value,
-					dd.Matches,
-					dd.Version,
-					dd.Confidence,
-				)
-			}
-		}
-
-		if len(findings.Matches) > 0 {
-			apps = append(apps, findings)
+			queue = append(queue, dependent)
+			queued[dependent] = struct{}{}
 		}
 	}
+
+	for len(queue) > 0 {
+		// Pop the first technology from the queue.
+		appname := queue[0]
+		queue = queue[1:]
+
+		delete(queued, appname)
+
+		// Skip technologies already processed.
+		if _, exists := detectedTechnologies[appname]; exists {
+			continue
+		}
+
+		if _, exists := notDetected[appname]; exists {
+			continue
+		}
+
+		app, ok := appDefs[appname]
+		if !ok {
+			continue
+		}
+
+		// Check technology prerequisites.
+		requirementsMet := true
+
+		for _, requiredTech := range app.Requires {
+			if _, exists := detectedTechnologies[requiredTech]; !exists {
+				requirementsMet = false
+				break
+			}
+		}
+
+		if !requirementsMet {
+			continue
+		}
+
+		// Check category prerequisites.
+		if len(app.RequiresCategory) > 0 {
+			categoryMet := false
+
+			for _, requiredCategory := range app.RequiresCategory {
+				for detectedTech := range detectedTechnologies {
+					detectedApp, ok := appDefs[detectedTech]
+					if !ok {
+						continue
+					}
+
+					if slices.Contains(detectedApp.Cats, requiredCategory) {
+						categoryMet = true
+					}
+
+					if categoryMet {
+						break
+					}
+				}
+
+				if categoryMet {
+					break
+				}
+			}
+
+			if !categoryMet {
+				continue
+			}
+		}
+
+		// Run fingerprint checks.
+		findings := wa.detectApp(
+			appname, app,
+			html, headers, finalURL, pageText, robotsText,
+			scriptSources, certIssuer, metaTags, cookiesMap,
+			dnsResults, xhrURLs, jsResults,
+			cssCollector, scriptCollector, domResults,
+		)
+
+		if len(findings.Matches) == 0 {
+			notDetected[appname] = struct{}{}
+			continue
+		}
+
+		// Successfully detected.
+		detectedTechnologies[appname] = struct{}{}
+		apps = append(apps, findings)
+
+		// Find technologies that depend on this technology.
+		dependents := make([]string, 0)
+
+		dependents = append(
+			dependents,
+			wa.appsIndex.RequiresByTech[appname]...,
+		)
+
+		for _, categoryID := range app.Cats {
+			dependents = append(
+				dependents,
+				wa.appsIndex.RequiresByCategory[categoryID]...,
+			)
+		}
+
+		// Enqueue dependents without duplicates.
+		for _, dependent := range dependents {
+			if _, exists := detectedTechnologies[dependent]; exists {
+				continue
+			}
+
+			if _, exists := notDetected[dependent]; exists {
+				continue
+			}
+
+			if _, exists := queued[dependent]; exists {
+				continue
+			}
+
+			queue = append(queue, dependent)
+			queued[dependent] = struct{}{}
+		}
+	}
+
+	// for appname, app := range appDefs {
+
+	// 	findings := Match{
+	// 		App:        app,
+	// 		AppName:    appname,
+	// 		Matches:    make([]DetectionMatch, 0),
+	// 		Categories: wa.resolveCategories(app),
+	// 	}
+
+	// 	// check raw HTML
+	// 	if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
+	// 		findings.addDetection(
+	// 			"html",
+	// 			"",
+	// 			"",
+	// 			m,
+	// 			v,
+	// 			c,
+	// 		)
+	// 	}
+
+	// 	// check response headers
+	// 	app.FindInHeaders(headers, &findings)
+
+	// 	// check url
+	// 	if m, v, c := findMatches(finalURL, app.URLRegex); len(m) > 0 {
+	// 		findings.addDetection(
+	// 			"url",
+	// 			"",
+	// 			finalURL,
+	// 			m,
+	// 			v,
+	// 			c,
+	// 		)
+
+	// 	}
+
+	// 	// check text
+
+	// 	if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
+	// 		findings.addDetection(
+	// 			"text",
+	// 			"",
+	// 			"",
+	// 			m,
+	// 			v,
+	// 			c,
+	// 		)
+	// 	}
+
+	// 	// check robots.txt
+	// 	if m, v, c := findMatches(robotsText, app.RobotsRegex); len(m) > 0 {
+	// 		findings.addDetection(
+	// 			"robots",
+	// 			"",
+	// 			"",
+	// 			m,
+	// 			v,
+	// 			c,
+	// 		)
+	// 	}
+
+	// 	// check script sources
+	// 	for _, script := range scriptSources {
+	// 		if m, v, c := findMatches(
+	// 			script,
+	// 			app.ScriptSrcRegex,
+	// 		); len(m) > 0 {
+	// 			findings.addDetection(
+	// 				"scriptSrc",
+	// 				"",
+	// 				script,
+	// 				m,
+	// 				v,
+	// 				c,
+	// 			)
+	// 		}
+	// 	}
+
+	// 	// check TLS certificate issuer
+	// 	if m, v, c := findMatches(certIssuer, app.CertIssuerRegex); len(m) > 0 {
+	// 		findings.addDetection(
+	// 			"certIssuer",
+	// 			"",
+	// 			certIssuer,
+	// 			m,
+	// 			v,
+	// 			c,
+	// 		)
+	// 	}
+
+	// 	// check meta tags
+	// 	for _, metaRegex := range app.MetaRegex {
+	// 		contents, ok := metaTags[strings.ToLower(metaRegex.Name)]
+	// 		if !ok {
+	// 			continue
+	// 		}
+
+	// 		for _, content := range contents {
+	// 			matches, version, confidence := findMatches(
+	// 				content,
+	// 				[]AppRegexp{metaRegex},
+	// 			)
+
+	// 			if len(matches) == 0 {
+	// 				continue
+	// 			}
+
+	// 			findings.addDetection(
+	// 				"meta",
+	// 				metaRegex.Name,
+	// 				content,
+	// 				matches,
+	// 				version,
+	// 				confidence,
+	// 			)
+	// 		}
+	// 	}
+
+	// 	// check cookies
+	// 	for _, cookieRegex := range app.CookieRegex {
+	// 		value, ok := cookiesMap[cookieRegex.Name]
+	// 		if !ok {
+	// 			continue
+	// 		}
+
+	// 		m, v, c := findMatches(
+	// 			value,
+	// 			[]AppRegexp{cookieRegex},
+	// 		)
+
+	// 		if len(m) == 0 {
+	// 			continue
+	// 		}
+
+	// 		findings.addDetection(
+	// 			"cookie",
+	// 			cookieRegex.Name,
+	// 			value,
+	// 			m,
+	// 			v,
+	// 			c,
+	// 		)
+	// 	}
+
+	// 	// check DNS
+	// 	for recordType, regexes := range app.DNSRegex {
+	// 		values := dnsResults[recordType]
+
+	// 		for _, value := range values {
+	// 			if m, v, c := findMatches(
+	// 				value,
+	// 				regexes,
+	// 			); len(m) > 0 {
+	// 				findings.addDetection(
+	// 					"dns",
+	// 					recordType,
+	// 					value,
+	// 					m,
+	// 					v,
+	// 					c,
+	// 				)
+	// 			}
+	// 		}
+	// 	}
+
+	// 	// check XHR/fetch requests
+
+	// 	if len(app.XHRRegex) > 0 {
+	// 		for _, xhrURL := range xhrURLs {
+	// 			if m, v, c := findMatches(
+	// 				xhrURL,
+	// 				app.XHRRegex,
+	// 			); len(m) > 0 {
+	// 				findings.addDetection(
+	// 					"xhr",
+	// 					"",
+	// 					xhrURL,
+	// 					m,
+	// 					v,
+	// 					c,
+	// 				)
+	// 			}
+	// 		}
+	// 	}
+
+	// 	// check JS properties if browser is enabled
+
+	// 	for _, jsRegex := range app.JSRegex {
+	// 		result, ok := jsResults[jsRegex.Name]
+
+	// 		if !ok || !result.Exists {
+	// 			continue
+	// 		}
+
+	// 		if m, v, c := findMatches(
+	// 			result.Value,
+	// 			[]AppRegexp{jsRegex},
+	// 		); len(m) > 0 {
+	// 			findings.addDetection(
+	// 				"js",
+	// 				jsRegex.Name,
+	// 				result.Value,
+	// 				m,
+	// 				v,
+	// 				c,
+	// 			)
+	// 		}
+	// 	}
+
+	// 	// check CSS source-code detections
+	// 	if cssCollector != nil {
+	// 		for _, detection := range cssCollector.Detections(
+	// 			appname,
+	// 		) {
+	// 			findings.addDetection(
+	// 				"css",
+	// 				"",
+	// 				"",
+	// 				detection.Matches,
+	// 				detection.Version,
+	// 				detection.Confidence,
+	// 			)
+	// 		}
+	// 	}
+
+	// 	// check JavaScript source-code detections
+
+	// 	if scriptCollector != nil {
+	// 		for _, detection := range scriptCollector.Detections(appname) {
+	// 			findings.addDetection(
+	// 				"script",
+	// 				"",
+	// 				detection.URL,
+	// 				detection.Matches,
+	// 				detection.Version,
+	// 				detection.Confidence,
+	// 			)
+	// 		}
+
+	// 	}
+
+	// 	// 2. Check DOM detections via O(1) map matching
+	// 	if len(domResults) > 0 {
+	// 		domDetections := wa.EvaluateApp(app, domResults)
+	// 		for _, dd := range domDetections {
+	// 			findings.addDetection(
+	// 				"dom",
+	// 				dd.Selector,
+	// 				dd.Value,
+	// 				dd.Matches,
+	// 				dd.Version,
+	// 				dd.Confidence,
+	// 			)
+	// 		}
+	// 	}
+
+	// 	if len(findings.Matches) > 0 {
+	// 		apps = append(apps, findings)
+	// 	}
+	// }
 
 	return apps, links, finalURL, nil
 }
