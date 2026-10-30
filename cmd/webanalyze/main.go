@@ -239,17 +239,28 @@ func main() {
 	wg.Wait()
 	close(resultCh)
 	collectorWG.Wait()
+
 	elapsed := time.Since(start)
 
-	fmt.Printf("\nTotal execution time: %s\n", elapsed)
+	logFile, err := os.OpenFile(
+		"results.txt",
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		0644,
+	)
+	if err != nil {
+		log.Fatalf("cannot open results.txt: %v", err)
+	}
+	defer logFile.Close()
 
-	fmt.Printf("\nTotal unique technologies: %d\n", len(technologyCount))
+	fmt.Fprintf(logFile, "Date: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(logFile, "Total execution time: %s\n\n", elapsed)
+	fmt.Fprintf(logFile, "Total unique technologies: %d\n", len(technologyCount))
 
 	for name, count := range technologyCount {
-
-		fmt.Printf("%s: %d\n", name, count)
-
+		fmt.Fprintf(logFile, "%s: %d\n", name, count)
 	}
+
+	fmt.Fprintln(logFile, strings.Repeat("-", 50))
 
 }
 
