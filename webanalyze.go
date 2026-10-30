@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1048,6 +1047,7 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	queued := make(map[string]struct{})
 	detectedTechnologies := make(map[string]struct{})
+	detectedCategories := make(map[int]struct{})
 	notDetected := make(map[string]struct{})
 
 	for _, appname := range wa.appsIndex.Initial {
@@ -1071,6 +1071,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 
 		detectedTechnologies[appname] = struct{}{}
+
+		for _, categoryID := range app.Cats {
+			detectedCategories[categoryID] = struct{}{}
+		}
+
 		apps = append(apps, findings)
 
 		requires := wa.appsIndex.RequiresByTech[appname]
@@ -1143,31 +1148,19 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		// Check category prerequisites.
 		if len(app.RequiresCategory) > 0 {
-			categoryMet := false
+			if len(app.RequiresCategory) > 0 {
+				categoryMet := false
 
-			for _, requiredCategory := range app.RequiresCategory {
-				for detectedTech := range detectedTechnologies {
-					detectedApp, ok := appDefs[detectedTech]
-					if !ok {
-						continue
-					}
-
-					if slices.Contains(detectedApp.Cats, requiredCategory) {
+				for _, requiredCategory := range app.RequiresCategory {
+					if _, exists := detectedCategories[requiredCategory]; exists {
 						categoryMet = true
-					}
-
-					if categoryMet {
 						break
 					}
 				}
 
-				if categoryMet {
-					break
+				if !categoryMet {
+					continue
 				}
-			}
-
-			if !categoryMet {
-				continue
 			}
 		}
 
@@ -1187,6 +1180,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		// Successfully detected.
 		detectedTechnologies[appname] = struct{}{}
+
+		for _, categoryID := range app.Cats {
+			detectedCategories[categoryID] = struct{}{}
+		}
+
 		apps = append(apps, findings)
 
 		// Find technologies that depend on this technology.
