@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -96,6 +97,11 @@ type DNSResult map[string][]string
 type JSResult struct {
 	Value  string `json:"value"`
 	Exists bool   `json:"exists"`
+}
+
+type Dependent struct {
+	Name         string
+	SkipRequires bool
 }
 
 func (m *Match) updateVersion(version string, confidence int) {
@@ -762,6 +768,7 @@ func (wa *WebAnalyzer) detectApp(
 	}
 
 	// 2. Check DOM detections via O(1) map matching
+
 	if len(domResults) > 0 {
 		domDetections := wa.EvaluateApp(app, domResults)
 		for _, dd := range domDetections {
@@ -1045,10 +1052,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	queue := []string{}
 
-	queued := make(map[string]struct{})
+	queued := make(map[string]bool)
 	detectedTechnologies := make(map[string]struct{})
 	detectedCategories := make(map[int]struct{})
 	notDetected := make(map[string]struct{})
+	detectionStart := time.Now()
 
 	for _, appname := range wa.appsIndex.Initial {
 
@@ -1078,8 +1086,6 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		apps = append(apps, findings)
 
-		requires := wa.appsIndex.RequiresByTech[appname]
-
 		var requiresByCategory []string
 
 		for _, categoryID := range app.Cats {
@@ -1089,33 +1095,40 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			)
 		}
 
-		dependents := make([]string, 0, len(requires)+len(requiresByCategory))
-		dependents = append(dependents, requires...)
-		dependents = append(dependents, requiresByCategory...)
+		dependents := make([]Dependent, 0, len(wa.appsIndex.RequiresByTech[appname])+len(requiresByCategory)+len(wa.appsIndex.ImpliesByTech[appname]))
 
-		for _, dependent := range dependents {
-			if _, exists := detectedTechnologies[dependent]; exists {
-				continue
-			}
-
-			if _, exists := notDetected[dependent]; exists {
-				continue
-			}
-
-			if _, exists := queued[dependent]; exists {
-				continue
-			}
-
-			queue = append(queue, dependent)
-			queued[dependent] = struct{}{}
+		for _, dependent := range wa.appsIndex.RequiresByTech[appname] {
+			dependents = append(dependents, Dependent{
+				Name: dependent,
+			})
 		}
+
+		for _, categoryID := range app.Cats {
+			for _, dependent := range wa.appsIndex.RequiresByCategory[categoryID] {
+				dependents = append(dependents, Dependent{
+					Name: dependent,
+				})
+			}
+		}
+
+		for _, implied := range wa.appsIndex.ImpliesByTech[appname] {
+			dependents = append(dependents, Dependent{
+				Name:         implied,
+				SkipRequires: true,
+			})
+		}
+
+		// Enqueue dependents.
+		wa.enqueueDependents(dependents, &queue, queued, detectedTechnologies, notDetected)
+
 	}
 
 	for len(queue) > 0 {
-		// Pop the first technology from the queue.
+
 		appname := queue[0]
 		queue = queue[1:]
 
+		skipRequires := queued[appname]
 		delete(queued, appname)
 
 		// Skip technologies already processed.
@@ -1132,22 +1145,24 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			continue
 		}
 
-		// Check technology prerequisites.
-		requirementsMet := true
+		// Check prerequisites only when not implied.
+		if !skipRequires {
 
-		for _, requiredTech := range app.Requires {
-			if _, exists := detectedTechnologies[requiredTech]; !exists {
-				requirementsMet = false
-				break
+			// Check technology prerequisites.
+			requirementsMet := true
+
+			for _, requiredTech := range app.Requires {
+				if _, exists := detectedTechnologies[requiredTech]; !exists {
+					requirementsMet = false
+					break
+				}
 			}
-		}
 
-		if !requirementsMet {
-			continue
-		}
+			if !requirementsMet {
+				continue
+			}
 
-		// Check category prerequisites.
-		if len(app.RequiresCategory) > 0 {
+			// Check category prerequisites.
 			if len(app.RequiresCategory) > 0 {
 				categoryMet := false
 
@@ -1187,301 +1202,41 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		apps = append(apps, findings)
 
-		// Find technologies that depend on this technology.
-		dependents := make([]string, 0)
+		// Collect dependents.
+		dependents := make([]Dependent, 0)
 
-		dependents = append(
-			dependents,
-			wa.appsIndex.RequiresByTech[appname]...,
-		)
+		for _, dependent := range wa.appsIndex.RequiresByTech[appname] {
+			dependents = append(dependents, Dependent{
+				Name: dependent,
+			})
+		}
 
 		for _, categoryID := range app.Cats {
-			dependents = append(
-				dependents,
-				wa.appsIndex.RequiresByCategory[categoryID]...,
-			)
+			for _, dependent := range wa.appsIndex.RequiresByCategory[categoryID] {
+				dependents = append(dependents, Dependent{
+					Name: dependent,
+				})
+			}
+		}
+
+		for _, implied := range wa.appsIndex.ImpliesByTech[appname] {
+			dependents = append(dependents, Dependent{
+				Name:         implied,
+				SkipRequires: true,
+			})
 		}
 
 		// Enqueue dependents without duplicates.
-		for _, dependent := range dependents {
-			if _, exists := detectedTechnologies[dependent]; exists {
-				continue
-			}
-
-			if _, exists := notDetected[dependent]; exists {
-				continue
-			}
-
-			if _, exists := queued[dependent]; exists {
-				continue
-			}
-
-			queue = append(queue, dependent)
-			queued[dependent] = struct{}{}
-		}
+		wa.enqueueDependents(dependents, &queue, queued, detectedTechnologies, notDetected)
 	}
 
-	// for appname, app := range appDefs {
-
-	// 	findings := Match{
-	// 		App:        app,
-	// 		AppName:    appname,
-	// 		Matches:    make([]DetectionMatch, 0),
-	// 		Categories: wa.resolveCategories(app),
-	// 	}
-
-	// 	// check raw HTML
-	// 	if m, v, c := findMatches(html, app.HTMLRegex); len(m) > 0 {
-	// 		findings.addDetection(
-	// 			"html",
-	// 			"",
-	// 			"",
-	// 			m,
-	// 			v,
-	// 			c,
-	// 		)
-	// 	}
-
-	// 	// check response headers
-	// 	app.FindInHeaders(headers, &findings)
-
-	// 	// check url
-	// 	if m, v, c := findMatches(finalURL, app.URLRegex); len(m) > 0 {
-	// 		findings.addDetection(
-	// 			"url",
-	// 			"",
-	// 			finalURL,
-	// 			m,
-	// 			v,
-	// 			c,
-	// 		)
-
-	// 	}
-
-	// 	// check text
-
-	// 	if m, v, c := findMatches(pageText, app.TextRegex); len(m) > 0 {
-	// 		findings.addDetection(
-	// 			"text",
-	// 			"",
-	// 			"",
-	// 			m,
-	// 			v,
-	// 			c,
-	// 		)
-	// 	}
-
-	// 	// check robots.txt
-	// 	if m, v, c := findMatches(robotsText, app.RobotsRegex); len(m) > 0 {
-	// 		findings.addDetection(
-	// 			"robots",
-	// 			"",
-	// 			"",
-	// 			m,
-	// 			v,
-	// 			c,
-	// 		)
-	// 	}
-
-	// 	// check script sources
-	// 	for _, script := range scriptSources {
-	// 		if m, v, c := findMatches(
-	// 			script,
-	// 			app.ScriptSrcRegex,
-	// 		); len(m) > 0 {
-	// 			findings.addDetection(
-	// 				"scriptSrc",
-	// 				"",
-	// 				script,
-	// 				m,
-	// 				v,
-	// 				c,
-	// 			)
-	// 		}
-	// 	}
-
-	// 	// check TLS certificate issuer
-	// 	if m, v, c := findMatches(certIssuer, app.CertIssuerRegex); len(m) > 0 {
-	// 		findings.addDetection(
-	// 			"certIssuer",
-	// 			"",
-	// 			certIssuer,
-	// 			m,
-	// 			v,
-	// 			c,
-	// 		)
-	// 	}
-
-	// 	// check meta tags
-	// 	for _, metaRegex := range app.MetaRegex {
-	// 		contents, ok := metaTags[strings.ToLower(metaRegex.Name)]
-	// 		if !ok {
-	// 			continue
-	// 		}
-
-	// 		for _, content := range contents {
-	// 			matches, version, confidence := findMatches(
-	// 				content,
-	// 				[]AppRegexp{metaRegex},
-	// 			)
-
-	// 			if len(matches) == 0 {
-	// 				continue
-	// 			}
-
-	// 			findings.addDetection(
-	// 				"meta",
-	// 				metaRegex.Name,
-	// 				content,
-	// 				matches,
-	// 				version,
-	// 				confidence,
-	// 			)
-	// 		}
-	// 	}
-
-	// 	// check cookies
-	// 	for _, cookieRegex := range app.CookieRegex {
-	// 		value, ok := cookiesMap[cookieRegex.Name]
-	// 		if !ok {
-	// 			continue
-	// 		}
-
-	// 		m, v, c := findMatches(
-	// 			value,
-	// 			[]AppRegexp{cookieRegex},
-	// 		)
-
-	// 		if len(m) == 0 {
-	// 			continue
-	// 		}
-
-	// 		findings.addDetection(
-	// 			"cookie",
-	// 			cookieRegex.Name,
-	// 			value,
-	// 			m,
-	// 			v,
-	// 			c,
-	// 		)
-	// 	}
-
-	// 	// check DNS
-	// 	for recordType, regexes := range app.DNSRegex {
-	// 		values := dnsResults[recordType]
-
-	// 		for _, value := range values {
-	// 			if m, v, c := findMatches(
-	// 				value,
-	// 				regexes,
-	// 			); len(m) > 0 {
-	// 				findings.addDetection(
-	// 					"dns",
-	// 					recordType,
-	// 					value,
-	// 					m,
-	// 					v,
-	// 					c,
-	// 				)
-	// 			}
-	// 		}
-	// 	}
-
-	// 	// check XHR/fetch requests
-
-	// 	if len(app.XHRRegex) > 0 {
-	// 		for _, xhrURL := range xhrURLs {
-	// 			if m, v, c := findMatches(
-	// 				xhrURL,
-	// 				app.XHRRegex,
-	// 			); len(m) > 0 {
-	// 				findings.addDetection(
-	// 					"xhr",
-	// 					"",
-	// 					xhrURL,
-	// 					m,
-	// 					v,
-	// 					c,
-	// 				)
-	// 			}
-	// 		}
-	// 	}
-
-	// 	// check JS properties if browser is enabled
-
-	// 	for _, jsRegex := range app.JSRegex {
-	// 		result, ok := jsResults[jsRegex.Name]
-
-	// 		if !ok || !result.Exists {
-	// 			continue
-	// 		}
-
-	// 		if m, v, c := findMatches(
-	// 			result.Value,
-	// 			[]AppRegexp{jsRegex},
-	// 		); len(m) > 0 {
-	// 			findings.addDetection(
-	// 				"js",
-	// 				jsRegex.Name,
-	// 				result.Value,
-	// 				m,
-	// 				v,
-	// 				c,
-	// 			)
-	// 		}
-	// 	}
-
-	// 	// check CSS source-code detections
-	// 	if cssCollector != nil {
-	// 		for _, detection := range cssCollector.Detections(
-	// 			appname,
-	// 		) {
-	// 			findings.addDetection(
-	// 				"css",
-	// 				"",
-	// 				"",
-	// 				detection.Matches,
-	// 				detection.Version,
-	// 				detection.Confidence,
-	// 			)
-	// 		}
-	// 	}
-
-	// 	// check JavaScript source-code detections
-
-	// 	if scriptCollector != nil {
-	// 		for _, detection := range scriptCollector.Detections(appname) {
-	// 			findings.addDetection(
-	// 				"script",
-	// 				"",
-	// 				detection.URL,
-	// 				detection.Matches,
-	// 				detection.Version,
-	// 				detection.Confidence,
-	// 			)
-	// 		}
-
-	// 	}
-
-	// 	// 2. Check DOM detections via O(1) map matching
-	// 	if len(domResults) > 0 {
-	// 		domDetections := wa.EvaluateApp(app, domResults)
-	// 		for _, dd := range domDetections {
-	// 			findings.addDetection(
-	// 				"dom",
-	// 				dd.Selector,
-	// 				dd.Value,
-	// 				dd.Matches,
-	// 				dd.Version,
-	// 				dd.Confidence,
-	// 			)
-	// 		}
-	// 	}
-
-	// 	if len(findings.Matches) > 0 {
-	// 		apps = append(apps, findings)
-	// 	}
-	// }
+	log.Printf(
+		"[DETECTION] Total time: %s | Detected: %d | Not detected: %d | Total evaluated: %d",
+		time.Since(detectionStart),
+		len(detectedTechnologies),
+		len(notDetected),
+		len(detectedTechnologies)+len(notDetected),
+	)
 
 	return apps, links, finalURL, nil
 }
@@ -1643,11 +1398,13 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 					matched = false
 					break
 				}
+
 				m, v, c := findMatches(propVal, []AppRegexp{propRegexp})
 				if len(m) == 0 {
 					matched = false
 					break
 				}
+
 				allMatches = append(allMatches, m...)
 				if v != "" {
 					bestVersion = v
@@ -1663,7 +1420,6 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 				}
 				detections = append(detections, DOMDetection{
 					Selector:   rule.Selector,
-					Value:      el.Text,
 					Matches:    allMatches,
 					Version:    bestVersion,
 					Confidence: maxConfidence,
@@ -1674,6 +1430,37 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 	}
 
 	return detections
+}
+
+func (wa *WebAnalyzer) enqueueDependents(
+	dependents []Dependent,
+	queue *[]string,
+	queued map[string]bool,
+	detectedTechnologies map[string]struct{},
+	notDetected map[string]struct{},
+) {
+	for _, dependent := range dependents {
+		name := dependent.Name
+
+		if _, exists := detectedTechnologies[name]; exists {
+			continue
+		}
+
+		if _, exists := notDetected[name]; exists {
+			continue
+		}
+
+		if _, exists := queued[name]; exists {
+			// If any technology implies it, skip prerequisite validation.
+			if dependent.SkipRequires {
+				queued[name] = true
+			}
+			continue
+		}
+
+		*queue = append(*queue, name)
+		queued[name] = dependent.SkipRequires
+	}
 }
 
 // runs a list of regexes on content

@@ -72,6 +72,7 @@ type AppsIndex struct {
 	Initial            []string
 	RequiresByTech     map[string][]string
 	RequiresByCategory map[int][]string
+	ImpliesByTech      map[string][]string
 }
 
 type ProbeRegexp struct {
@@ -481,6 +482,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		Initial:            make([]string, 0),
 		RequiresByTech:     make(map[string][]string),
 		RequiresByCategory: make(map[int][]string),
+		ImpliesByTech:      make(map[string][]string),
 	}
 
 	for key, value := range wa.appDefs {
@@ -552,7 +554,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		wa.appDefs[key] = app
 
 		// Build the indexes.
-		if len(app.Requires) == 0 && len(app.RequiresCategory) == 0 {
+		if len(app.Requires) == 0 && len(app.RequiresCategory) == 0 && len(app.Implies) == 0 {
 			wa.appsIndex.Initial = append(wa.appsIndex.Initial, key)
 		}
 
@@ -564,6 +566,11 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		for _, categoryID := range app.RequiresCategory {
 			wa.appsIndex.RequiresByCategory[categoryID] =
 				append(wa.appsIndex.RequiresByCategory[categoryID], key)
+		}
+
+		for _, impliedTech := range app.Implies {
+			wa.appsIndex.ImpliesByTech[impliedTech] =
+				append(wa.appsIndex.ImpliesByTech[impliedTech], key)
 		}
 
 	}
@@ -643,7 +650,7 @@ func normalizeRegex(pattern string) string {
 	return pattern
 }
 
-// helper regex function to find matches in a string and return the version if applicable
+// helper regex function to find matches in a string and return the version and confidence if applicable
 func compileAppRegexp(name, value string) (AppRegexp, bool) {
 	if value == "" {
 		value = "^.*$"
