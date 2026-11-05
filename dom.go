@@ -86,10 +86,10 @@ func (wa *WebAnalyzer) CollectDOMResults(ctx context.Context) (map[string][]elem
 
 						for (const prop of propertyNames) {
 							try {
-								data.properties[prop] = propertyToString(el[prop]);
-							} catch (_) {
-								data.properties[prop] = "";
-							}
+								if (prop in el) {
+									data.properties[prop] = propertyToString(el[prop]);
+								}
+							} catch (_) {}
 						}
 
 						results[sel].push(data);

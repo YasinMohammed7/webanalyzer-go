@@ -1399,6 +1399,13 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 					break
 				}
 
+				if propRegexp.Pattern == "" {
+					if maxConfidence < 100 {
+						maxConfidence = 100
+					}
+					continue
+				}
+
 				m, v, c := findMatches(propVal, []AppRegexp{propRegexp})
 				if len(m) == 0 {
 					matched = false
@@ -1406,9 +1413,11 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 				}
 
 				allMatches = append(allMatches, m...)
+
 				if v != "" {
 					bestVersion = v
 				}
+
 				if c > maxConfidence {
 					maxConfidence = c
 				}
