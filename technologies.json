@@ -4963,6 +4963,9 @@
   "js": {
    "alireviews_tags": ""
   },
+  "implies": [
+   "Shopify"
+  ],
   "website": "https://apps.shopify.com/ali-reviews",
   "icon": "Alireviews.svg"
  },
@@ -16150,6 +16153,9 @@
   "html": [
    "\u003cdiv[^\u003e]+class=[\"']brz-root__container"
   ],
+  "requires": [
+   "WordPress"
+  ],
   "website": "https://brizy.io",
   "icon": "Brizy.svg"
  },
@@ -19068,6 +19074,9 @@
   "cats": [
    100
   ],
+  "implies": [
+   "Shopify"
+  ],
   "scripts": [
    "fast-checkout-api\\.cartylabs\\.com"
   ],
@@ -20320,7 +20329,7 @@
    "call\\.chatra\\.io/chatra\\.js"
   ],
   "xhr": [
-   "chat\\.chatra\\.io/"
+   "chat\\.chatra\\.io"
   ],
   "website": "https://chatra.com",
   "icon": "Chatra.svg"
@@ -20534,7 +20543,7 @@
    "Nuxt.js"
   ],
   "xhr": [
-   "api\\.checklyhq\\.com/"
+   "api\\.checklyhq\\.com"
   ],
   "website": "https://www.checklyhq.com",
   "icon": "Checkly.svg"
@@ -23337,6 +23346,9 @@
    80,
    87
   ],
+  "requires": [
+   "WordPress"
+  ],
   "scripts": [
    "codetipi-"
   ],
@@ -23996,7 +24008,7 @@
    "img[srcset*='cdn.commercengine.io']"
   ],
   "xhr": [
-   "prod\\.api\\.commercengine\\.io/"
+   "prod\\.api\\.commercengine\\.io"
   ],
   "website": "https://www.commercengine.io",
   "icon": "Commerce Engine.svg"
@@ -24500,6 +24512,9 @@
   ],
   "cats": [
    100
+  ],
+  "implies": [
+   "Shopify"
   ],
   "scriptSrc": [
    "app\\.conjured\\.co/"
@@ -25663,6 +25678,9 @@
    67,
    87
   ],
+  "requires": [
+   "WordPress"
+  ],
   "scriptSrc": [
    "/wp-content/plugins/cookie-notice/.+\\.js(?:\\?ver=(\\d+(?:\\.\\d+)+))?\\;version:\\1"
   ],
@@ -26016,6 +26034,9 @@
   ],
   "dom": [
    "link#core-framework-frontend-css, style#core-framework-inline-inline-css"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "website": "https://coreframework.com",
   "icon": "CoreFramework.svg"
@@ -26461,6 +26482,9 @@
   "cats": [
    96,
    100
+  ],
+  "implies": [
+   "Shopify"
   ],
   "scriptSrc": [
    "\\.covet\\.pics/"
@@ -32217,7 +32241,7 @@
    "WebRTC"
   ],
   "xhr": [
-   "cdn\\.dyte\\.in/"
+   "cdn\\.dyte\\.in"
   ],
   "website": "https://dyte.io",
   "icon": "Dyte.svg"
@@ -32689,7 +32713,7 @@
    "Next.js"
   ],
   "xhr": [
-   "api\\.easy-orders\\.net/"
+   "api\\.easy-orders\\.net"
   ],
   "website": "https://www.easy-orders.net",
   "icon": "Easy Orders.svg"
@@ -33634,6 +33658,9 @@
   "implies": [
    "Elasticsearch"
   ],
+  "requires": [
+   "WordPress"
+  ],
   "website": "https://www.elasticpress.io/",
   "icon": "elasticpress.svg"
  },
@@ -34399,6 +34426,9 @@
    87,
    92
   ],
+  "requires": [
+   "WordPress"
+  ],
   "meta": {
    "generator": [
     "^embed-optimizer ([\\d.]+)?\\;version:\\1"
@@ -34858,6 +34888,9 @@
   "cats": [
    87,
    92
+  ],
+  "requires": [
+   "WordPress"
   ],
   "meta": {
    "generator": [
@@ -35574,6 +35607,9 @@
   "html": [
    "\u003cdiv[^\u003e]+class=[\"']wp-block-essential-blocks-*"
   ],
+  "requires": [
+   "WordPress"
+  ],
   "website": "https://essential-blocks.com",
   "icon": "essential-blocks.png"
  },
@@ -35815,6 +35851,9 @@
   ],
   "dom": [
    "link#eventon_dynamic_styles-css, link[href*='/css/eventon_styles\\.css']"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "website": "https://www.myeventon.com",
   "icon": "eventon.svg"
@@ -36986,10 +37025,8 @@
   "implies": [
    "Facebook Pixel"
   ],
-  "xhr": [
-   "facebook\\.com/tr/",
-   "udff\\[em\\]=[a-fA-F0-9]{64}",
-   "udff\\[.+\\]=[a-fA-F0-9]+"
+  "scripts": [
+   "fbq\\(\\s*['\"]init['\"]\\s*,\\s*['\"]?\\d+['\"]?\\s*,\\s*\\{"
   ],
   "website": "https://www.facebook.com/business/help/611774685654668?id=1205376682832142",
   "icon": "Meta.svg"
@@ -42903,6 +42940,19 @@
   "website": "https://apps.shopify.com/multilingual-shop-by-gtranslate",
   "icon": "GTranslate.svg"
  },
+ "GURU": {
+  "description": "GURU is a UK hosting provider; hosted domains use guru.net.uk nameservers.",
+  "cats": [
+   88
+  ],
+  "dns": {
+   "NS": [
+    "\\.guru\\.net\\.uk"
+   ]
+  },
+  "website": "https://www.guru.co.uk",
+  "icon": "GURU.png"
+ },
  "GX WebManager": {
   "cats": [
    1
@@ -43402,6 +43452,9 @@
   },
   "html": [
    "\u003cdiv[^\u003e]+class=[\"']wp-block-atomic-blocks-*"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "scriptSrc": [
    "/wp-content/themes/genesis-blocks/lib/js/"
@@ -46556,7 +46609,7 @@
    ]
   },
   "xhr": [
-   "graphql\\.[\\w]+\\.(?:com|net)/"
+   "graphql\\.[\\w]+\\.(?:com|net)"
   ],
   "website": "https://graphql.org",
   "icon": "GraphQL.svg"
@@ -51440,7 +51493,7 @@
    "ipinfo\\.io/"
   ],
   "xhr": [
-   "ipinfo\\.io/"
+   "ipinfo\\.io"
   ],
   "website": "https://ipinfo.io",
   "icon": "IPinfo.svg"
@@ -51513,6 +51566,9 @@
    "Icegram": "",
    "icegram_data": ""
   },
+  "requires": [
+   "WordPress"
+  ],
   "scriptSrc": [
    "/wp-content/plugins/icegram/.*main\\.min\\.js\\?ver=([\\d\\.]+)\\;version:\\1"
   ],
@@ -51566,6 +51622,20 @@
   },
   "website": "https://www.lcp.be",
   "icon": "Icordis CMS.svg"
+ },
+ "Ideal Media": {
+  "description": "Ideal Media is a content-recommendation advertising network (MGID family); publishers embed a site loader script from jsc.idealmedia.io.",
+  "cats": [
+   36
+  ],
+  "scriptSrc": [
+   "jsc\\.idealmedia\\.io/"
+  ],
+  "xhr": [
+   "\\.idealmedia\\.io"
+  ],
+  "website": "https://idealmedia.io",
+  "icon": "Ideal Media.png"
  },
  "Ideasoft": {
   "description": "Ideasoft is a Turkish software company providing web-based software solutions, software design, ecommerce solutions, and other services.",
@@ -51806,6 +51876,9 @@
    87,
    92
   ],
+  "requires": [
+   "WordPress"
+  ],
   "meta": {
    "generator": [
     "^dominant-color-images ([\\d.]+)?\\;version:\\1"
@@ -51819,6 +51892,9 @@
   "cats": [
    87,
    92
+  ],
+  "requires": [
+   "WordPress"
   ],
   "meta": {
    "generator": [
@@ -56881,6 +56957,9 @@
   "cats": [
    100
   ],
+  "implies": [
+   "Shopify"
+  ],
   "scriptSrc": [
    "cdn\\.kilatechapps\\.com/"
   ],
@@ -57546,6 +57625,9 @@
   "js": {
    "KLIP_APP_DATA.ATCPath": ""
   },
+  "implies": [
+   "Shopify"
+  ],
   "website": "https://klipcoupons.com",
   "icon": "Klip.svg"
  },
@@ -60102,6 +60184,19 @@
   "website": "https://service.aainc.co.jp/product/letro/",
   "icon": "Letro.svg"
  },
+ "LetsHost": {
+  "description": "LetsHost is an Irish hosting provider; hosted domains use dnsireland.com/.ie nameservers.",
+  "cats": [
+   88
+  ],
+  "dns": {
+   "NS": [
+    "dnsireland\\.(?:com|ie)"
+   ]
+  },
+  "website": "https://letshost.ie",
+  "icon": "LetsHost.png"
+ },
  "Levar": {
   "description": "Levar specialises in 3D visualisation technology for ecommerce stores.",
   "saas": true,
@@ -60343,6 +60438,9 @@
   ],
   "dom": [
    "link#lifterlms-styles-css"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "scriptSrc": [
    "/plugins/lifterlms/assets/js/llms\\.min\\.js\\?ver=([\\d\\.]+)\\;version:\\1"
@@ -62285,7 +62383,7 @@
    ]
   },
   "xhr": [
-   "loom\\.com/api",
+   "(?:^|\\.)loom\\.com$",
    "luna\\.loom\\.com"
   ],
   "website": "https://www.loom.com",
@@ -68045,7 +68143,7 @@
    76
   ],
   "xhr": [
-   "\\.askmiso\\.com/"
+   "\\.askmiso\\.com"
   ],
   "website": "https://miso.ai",
   "icon": "Miso.svg"
@@ -68430,6 +68528,9 @@
    87,
    92
   ],
+  "requires": [
+   "WordPress"
+  ],
   "meta": {
    "generator": [
     "^webp-uploads ([\\d.]+)?\\;version:\\1"
@@ -68537,6 +68638,9 @@
    "ModulaIsotope": "",
    "modulaInViewport": ""
   },
+  "requires": [
+   "WordPress"
+  ],
   "website": "https://wp-modula.com",
   "icon": "Modula.svg"
  },
@@ -69516,14 +69620,14 @@
   "icon": "Motion.svg"
  },
  "Motion.page": {
-  "description": "Motion.page is a WordPress animation plugin utilizing GSAP and ScrollTrigger.",
+  "description": "Motion.page is a visual animation builder available as a WordPress plugin and as a desktop app.",
   "saas": true,
   "pricing": [
    "low",
    "recurring"
   ],
   "cats": [
-   87
+   59
   ],
   "js": {
    "MOTIONPAGE_FRONT.version": "^([0-9\\.]+)$\\;version:\\1"
@@ -70151,7 +70255,7 @@
    "content-security-policy": "\\.myfonts\\.net"
   },
   "xhr": [
-   "\\.myfonts\\.net/"
+   "\\.myfonts\\.net"
   ],
   "website": "https://www.myfonts.com",
   "icon": "MyFonts.svg"
@@ -71682,6 +71786,9 @@
   ],
   "dom": [
    "a.imprint[href*='newspack.pub']"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "website": "https://github.com/Automattic/newspack-plugin",
   "icon": "NewspackLogo.png"
@@ -73856,6 +73963,17 @@
   "website": "https://odoo.com",
   "icon": "Odoo.svg"
  },
+ "Offerista": {
+  "description": "Offerista is a retail-marketing network; publisher pages embed its brochure widgets served from marktjagd.com and offerista.com.",
+  "cats": [
+   36
+  ],
+  "xhr": [
+   "(?:offerista\\.com|marktjagd\\.(?:com|de))"
+  ],
+  "website": "https://www.offerista.com",
+  "icon": "Offerista.png"
+ },
  "Offline.js": {
   "description": "Offline.js is a library that automatically alerts users when they have lost internet connectivity.",
   "oss": true,
@@ -75691,6 +75809,9 @@
    87,
    92
   ],
+  "requires": [
+   "WordPress"
+  ],
   "meta": {
    "generator": [
     "^optimization-detective ([\\d.]+)?\\;version:\\1"
@@ -76558,6 +76679,9 @@
   },
   "html": [
    "\u003cdiv[^\u003e]+class=[\"']wp-block-themeisle-blocks-*"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "website": "https://wordpress.org/plugins/otter-blocks/",
   "icon": "otter-blocks.png"
@@ -77893,6 +78017,9 @@
    "PandectesRules": "",
    "PandectesSettings": ""
   },
+  "implies": [
+   "Shopify"
+  ],
   "scriptSrc": [
    "pandectes-core\\.js|(?:s3\\.us-west-2\\.amazonaws\\.com|gdpr-privacy-policy-assets\\.s3-us-west-2\\.amazonaws\\.com)/gdpr-privacy-policy-assets/"
   ],
@@ -79648,6 +79775,9 @@
   "cats": [
    87,
    92
+  ],
+  "requires": [
+   "WordPress"
   ],
   "meta": {
    "generator": [
@@ -83753,6 +83883,9 @@
   "js": {
    "initPDQscript": ""
   },
+  "implies": [
+   "Shopify"
+  ],
   "scriptSrc": [
    "pdq-scripts\\.pdqprod\\.link"
   ],
@@ -83793,6 +83926,9 @@
    "wc_price_based_country_ajax_geo_params": "",
    "wc_price_based_country_pro_frontend_params": ""
   },
+  "requires": [
+   "WooCommerce"
+  ],
   "website": "https://woocommerce.com/products/price-by-country",
   "icon": "WooCommerce.svg"
  },
@@ -85397,6 +85533,9 @@
   },
   "html": [
    "\u003cdiv[^\u003e]+class=[\"']wp-block-advgb-*"
+  ],
+  "requires": [
+   "WordPress"
   ],
   "website": "https://publishpress.com/blocks/",
   "icon": "publishpress-blocks.png"
@@ -87863,6 +88002,9 @@
    "rafflepress_api_url": "",
    "rafflepress_cookies": ""
   },
+  "requires": [
+   "WordPress"
+  ],
   "scripts": [
    "\\.rafflepress\\.com"
   ],
@@ -89065,7 +89207,8 @@
    "rebuyConfig": ""
   },
   "implies": [
-   "Cart Functionality"
+   "Cart Functionality",
+   "Shopify"
   ],
   "scriptSrc": [
    "rebuyengine\\.com"
@@ -90975,7 +91118,6 @@
    "recurring"
   ],
   "cats": [
-   100,
    36
   ],
   "js": {
@@ -98507,13 +98649,13 @@
    "freemium"
   ],
   "cats": [
-   100
+   6
   ],
   "js": {
    "ShopifyBuy": ""
   },
   "scriptSrc": [
-   "sdk\\. shopifycdn\\.com/buy-button/latest/"
+   "sdks\\.shopifycdn\\.com/buy-button/"
   ],
   "website": "https://apps.shopify.com/buy-button",
   "icon": "Shopify.svg"
@@ -101728,6 +101870,9 @@
   "dom": {
    "#slim-seo-schema": {}
   },
+  "requires": [
+   "WordPress"
+  ],
   "website": "https://wpslimseo.com",
   "icon": "Slim-SEO.svg"
  },
@@ -104049,6 +104194,9 @@
   "cats": [
    87,
    92
+  ],
+  "requires": [
+   "WordPress"
   ],
   "meta": {
    "generator": [
@@ -108116,6 +108264,9 @@
   "cats": [
    100
   ],
+  "implies": [
+   "Shopify"
+  ],
   "scripts": [
    "app\\.sweetupsell\\.com"
   ],
@@ -111996,6 +112147,9 @@
   "html": [
    "\u003cdiv[^\u003e]+class=[\"']themify_builder_*"
   ],
+  "requires": [
+   "WordPress"
+  ],
   "website": "https://themify.me/builder",
   "icon": "themify-builder.png"
  },
@@ -112122,6 +112276,9 @@
   "cats": [
    90,
    100
+  ],
+  "implies": [
+   "Shopify"
   ],
   "scriptSrc": [
    "thimatic-apps\\.com/product_review/.*?v=([\\d.]+)\\;version:\\1"
@@ -113045,6 +113202,9 @@
   },
   "dom": [
    "div[class*='timesact_powered_by']"
+  ],
+  "implies": [
+   "Shopify"
   ],
   "website": "https://timesact.com",
   "icon": "Timesact.svg"
@@ -115630,6 +115790,9 @@
   "dom": {
    "link[href*='/wp-content/themes/twentytwentyfive/']": {}
   },
+  "requires": [
+   "WordPress"
+  ],
   "scriptSrc": [
    "/wp-content/themes/twentytwentyfive/"
   ],
@@ -115644,6 +115807,9 @@
   "dom": {
    "link[href*='/wp-content/themes/twentytwentyfour/']": {}
   },
+  "requires": [
+   "WordPress"
+  ],
   "scriptSrc": [
    "/wp-content/themes/twentytwentyfour/"
   ],
@@ -116800,9 +116966,6 @@
   ],
   "url": [
    "/umbraco/login\\.aspx(?:$|\\?)"
-  ],
-  "xhr": [
-   "/umbraco/api/"
   ],
   "website": "https://umbraco.com/",
   "icon": "Umbraco.svg"
@@ -121290,7 +121453,7 @@
    "div[class*='Vue-Toastification__container']"
   ],
   "html": [
-   "\u003c(?!svg)[^\u003e]+\\sdata-v(?:ue)?-"
+   "\u003c(?:[^s\u003c\u003e]|s[^v\u003c\u003e]|sv[^g\u003c\u003e])[^\u003c\u003e]*\\sdata-v(?:ue)?-|\u003c(?:s|sv)\\sdata-v(?:ue)?-"
   ],
   "css": [
    "\\.vue-notification-group"
@@ -121863,6 +122026,9 @@
   "js": {
    "WP_Grid_Builder": ""
   },
+  "requires": [
+   "WordPress"
+  ],
   "scriptSrc": [
    "/wp-content/plugins/wp-grid-builder/frontend/assets/js/layout\\.js\\?ver=([\\d.]+)\\;version:\\1"
   ],
@@ -123014,6 +123180,9 @@
   "cats": [
    87,
    92
+  ],
+  "requires": [
+   "WordPress"
   ],
   "meta": {
    "generator": [
@@ -126901,7 +127070,7 @@
   "description": "XYZScripts is a provider of PHP clone scripts and WordPress plugins. It offers top-quality PHP and MySQL scripts to help build online businesses, with ready-to-deploy solutions that enable website setup.",
   "saas": true,
   "cats": [
-   87
+   19
   ],
   "dom": [
    "a[href*='xyzscripts.com/'] + a[href*='www.xyzscripts.com']"
@@ -129842,6 +130011,9 @@
   "cats": [
    100
   ],
+  "implies": [
+   "Shopify"
+  ],
   "scriptSrc": [
    "/zipify-oneclickupsell-vendor\\.js"
   ],
@@ -131364,7 +131536,7 @@
    "\\.commercetools\\.com"
   ],
   "xhr": [
-   "\\.commercetools\\.com/"
+   "\\.commercetools\\.com"
   ],
   "website": "https://commercetools.com",
   "icon": "commercetools.svg"
@@ -133073,7 +133245,7 @@
    79
   ],
   "xhr": [
-   "ipapi\\.co/"
+   "(?:^|\\.)ipapi\\.co$"
   ],
   "website": "https://ipapi.co",
   "icon": "ipapi.co.svg"
@@ -133716,6 +133888,19 @@
   ],
   "website": "https://mathjs.org",
   "icon": "math.js.svg"
+ },
+ "maxcluster": {
+  "description": "maxcluster is a German e-commerce hosting provider; hosted domains use maxcluster.net nameservers.",
+  "cats": [
+   88
+  ],
+  "dns": {
+   "NS": [
+    "\\.maxcluster\\.net"
+   ]
+  },
+  "website": "https://maxcluster.de",
+  "icon": "maxcluster.png"
  },
  "mdBook": {
   "description": "mdBook is a utility to create modern online books from Markdown files.",

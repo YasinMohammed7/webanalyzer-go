@@ -1,21 +1,26 @@
 package webanalyze
 
 import (
+	"archive/zip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"maps"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dlclark/regexp2/v2"
 )
 
 const WappazlyerRoot = "https://raw.githubusercontent.com/enthec/webappanalyzer/main/src"
+const githubAPI = "https://api.github.com/repos/enthec/webappanalyzer"
 
 type App struct {
 	Description      string                 `json:"description,omitempty"`
@@ -145,6 +150,16 @@ type Group struct {
 type GroupsDefinition map[string]Group
 
 type StringArray []string
+
+type GitHubTreeResponse struct {
+	Tree []struct {
+		Path string `json:"path"`
+		Type string `json:"type"`
+		SHA  string `json:"sha"`
+		Url  string `json:"url"`
+	} `json:"tree"`
+	Truncated bool `json:"truncated"`
+}
 
 func (d *DOM) UnmarshalJSON(data []byte) error {
 	var value string
@@ -353,33 +368,6 @@ func downloadTechnologies() (map[string]App, error) {
 	return apps, nil
 }
 
-// func downloadTechnologiesLocal() (map[string]App, error) {
-// 	apps := make(map[string]App)
-
-// 	files, err := os.ReadDir("technologies1")
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	for _, file := range files {
-// 		if file.IsDir() || filepath.Ext(file.Name()) != ".json" {
-// 			continue
-// 		}
-// 		path := filepath.Join("technologies1", file.Name())
-// 		f, err := os.Open(path)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		m := make(map[string]App)
-// 		if err := json.NewDecoder(f).Decode(&m); err != nil {
-// 			f.Close()
-// 			return nil, err
-// 		}
-// 		maps.Copy(apps, m)
-// 		f.Close()
-// 	}
-// 	return apps, nil
-// }
-
 func downloadCategories() (map[string]Category, error) {
 
 	url := fmt.Sprintf("%v/categories.json", WappazlyerRoot)
@@ -398,22 +386,345 @@ func downloadCategories() (map[string]Category, error) {
 	return m, nil
 }
 
-// func downloadCategoriesLocal() (map[string]Category, error) {
-// 	file, err := os.Open("categoriesSample.json")
+func getLocalIconsSHA() (string, error) {
+	data, err := os.ReadFile("icons_version.txt")
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
 
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer file.Close()
+	if err != nil {
+		return "", err
+	}
 
-// 	m := make(map[string]Category)
+	return strings.TrimSpace(string(data)), nil
+}
 
-// 	if err := json.NewDecoder(file).Decode(&m); err != nil {
-// 		return nil, err
-// 	}
+func saveLocalIconsSHA(sha string) error {
+	return os.WriteFile(
+		"icons_version.txt",
+		[]byte(sha+"\n"),
+		0644,
+	)
+}
 
-// 	return m, nil
-// }
+func getLatestCommitSHA(client *http.Client) (string, error) {
+	url := githubAPI + "/commits/main"
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "webanalyze")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned: %s", resp.Status)
+	}
+
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&commit); err != nil {
+		return "", err
+	}
+
+	if commit.SHA == "" {
+		return "", errors.New("GitHub returned an empty commit SHA")
+	}
+
+	return commit.SHA, nil
+}
+
+func getRemoteIconsSHA() (string, string, error) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	commitSHA, err := getLatestCommitSHA(client)
+	if err != nil {
+		return "", "", fmt.Errorf("get latest commit: %w", err)
+	}
+
+	url := fmt.Sprintf(
+		"%s/git/trees/%s?recursive=1",
+		githubAPI,
+		commitSHA,
+	)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", "", err
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "webanalyze")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("GitHub API returned: %s", resp.Status)
+	}
+
+	var result GitHubTreeResponse
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", err
+	}
+
+	if result.Truncated {
+		return "", "", errors.New("GitHub tree response was truncated")
+	}
+
+	for _, entry := range result.Tree {
+		if entry.Path == "src/images/icons" && entry.Type == "tree" {
+			return entry.SHA, commitSHA, nil
+		}
+	}
+
+	return "", "", errors.New("icons directory not found in GitHub repository")
+}
+
+func extractIcons(reader *zip.Reader, destination string) error {
+	const iconsPath = "src/images/icons/"
+
+	extracted := 0
+
+	for _, file := range reader.File {
+		index := strings.Index(file.Name, iconsPath)
+		if index == -1 {
+			continue
+		}
+
+		relativePath := file.Name[index+len(iconsPath):]
+		if relativePath == "" {
+			continue
+		}
+
+		cleanPath := filepath.Clean(filepath.FromSlash(relativePath))
+		if !filepath.IsLocal(cleanPath) {
+			return fmt.Errorf("invalid ZIP path: %s", file.Name)
+		}
+
+		target := filepath.Join(destination, cleanPath)
+
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Skip symlinks and other non-regular files.
+		if !file.Mode().IsRegular() {
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+
+		if err := extractZipFile(file, target); err != nil {
+			return err
+		}
+
+		extracted++
+	}
+
+	if extracted == 0 {
+		return errors.New("no icons found in ZIP archive")
+	}
+
+	log.Printf("Extracted %d icons", extracted)
+	return nil
+}
+
+func extractZipFile(file *zip.File, destination string) error {
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(
+		destination,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+		0644,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+
+	if copyErr != nil {
+		return copyErr
+	}
+
+	return closeErr
+}
+
+func replaceIconsDirectory(tempDir string) error {
+	const iconsDir = "icons"
+
+	backupDir, err := os.MkdirTemp(".", ".icons-backup-*")
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(backupDir); err != nil {
+		return err
+	}
+
+	oldIconsExist := false
+
+	if _, err := os.Stat(iconsDir); err == nil {
+		if err := os.Rename(iconsDir, backupDir); err != nil {
+			return fmt.Errorf("cannot backup existing icons: %w", err)
+		}
+		oldIconsExist = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	if err := os.Rename(tempDir, iconsDir); err != nil {
+		if oldIconsExist {
+			if restoreErr := os.Rename(backupDir, iconsDir); restoreErr != nil {
+				return fmt.Errorf(
+					"cannot install new icons: %w; cannot restore backup: %v",
+					err,
+					restoreErr,
+				)
+			}
+		}
+		return err
+	}
+
+	if oldIconsExist {
+		if err := os.RemoveAll(backupDir); err != nil {
+			log.Printf("warning: cannot remove old icons backup: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func DownloadIcons() error {
+	client := &http.Client{
+		Timeout: 2 * time.Minute,
+	}
+
+	remoteSHA, commitSHA, err := getRemoteIconsSHA()
+	if err != nil {
+		return fmt.Errorf("cannot check icons version: %w", err)
+	}
+
+	localSHA, err := getLocalIconsSHA()
+	if err != nil {
+		return fmt.Errorf("failed to read local icons version: %w", err)
+	}
+
+	if localSHA == remoteSHA {
+		if _, err := os.Stat("icons"); err == nil {
+			log.Println("Icons are already up to date")
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("cannot check icons directory: %w", err)
+		}
+	}
+
+	log.Println("Icons have changed. Downloading...")
+
+	url := fmt.Sprintf(
+		"%s/zipball/%s",
+		githubAPI,
+		commitSHA,
+	)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "webanalyze")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GitHub returned status: %s", resp.Status)
+	}
+
+	// Download ZIP to a temporary file.
+	zipFile, err := os.CreateTemp("", "webanalyze-*.zip")
+	if err != nil {
+		return err
+	}
+
+	zipPath := zipFile.Name()
+	defer os.Remove(zipPath)
+
+	_, copyErr := io.Copy(zipFile, resp.Body)
+	closeErr := zipFile.Close()
+
+	if copyErr != nil {
+		return fmt.Errorf("failed to download ZIP: %w", copyErr)
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+
+	// Open ZIP archive.
+	archive, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to open ZIP archive: %w", err)
+	}
+	defer archive.Close()
+
+	// Extract icons into a temporary directory.
+	tempDir, err := os.MkdirTemp(".", ".icons-tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempDir)
+
+	if err := extractIcons(&archive.Reader, tempDir); err != nil {
+		return fmt.Errorf("failed to extract icons: %w", err)
+	}
+
+	// Replace existing icons.
+	if err := replaceIconsDirectory(tempDir); err != nil {
+		return fmt.Errorf("failed to replace icons: %w", err)
+	}
+
+	// Save SHA only after successful installation.
+	if err := saveLocalIconsSHA(remoteSHA); err != nil {
+		return fmt.Errorf("failed to save icons version: %w", err)
+	}
+
+	log.Println("Icons successfully updated")
+
+	return nil
+}
 
 // DownloadFile pulls the latest technologies.json file from the Wappalyzer github
 func DownloadFile(categoriesPath string, technologiesPath string, groupsPath string) error {
@@ -459,6 +770,11 @@ func DownloadFile(categoriesPath string, technologiesPath string, groupsPath str
 	}
 	if err := os.WriteFile(technologiesPath, technologiesData, 0644); err != nil {
 		return fmt.Errorf("failed to write technologies file: %w", err)
+	}
+
+	err = DownloadIcons()
+	if err != nil {
+		return fmt.Errorf("failed to download icons: %w", err)
 	}
 
 	return nil
