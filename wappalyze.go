@@ -77,7 +77,13 @@ type AppsIndex struct {
 	Initial            []string
 	RequiresByTech     map[string][]string
 	RequiresByCategory map[int][]string
-	ImpliesByTech      map[string][]string
+	ImpliesByTech      map[string][]Implication
+}
+
+type Implication struct {
+	Name       string
+	Version    string
+	Confidence int
 }
 
 type ProbeRegexp struct {
@@ -798,7 +804,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		Initial:            make([]string, 0),
 		RequiresByTech:     make(map[string][]string),
 		RequiresByCategory: make(map[int][]string),
-		ImpliesByTech:      make(map[string][]string),
+		ImpliesByTech:      make(map[string][]Implication),
 	}
 
 	for key, value := range wa.appDefs {
@@ -870,7 +876,7 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		wa.appDefs[key] = app
 
 		// Build the indexes.
-		if len(app.Requires) == 0 && len(app.RequiresCategory) == 0 && len(app.Implies) == 0 {
+		if len(app.Requires) == 0 && len(app.RequiresCategory) == 0 {
 			wa.appsIndex.Initial = append(wa.appsIndex.Initial, key)
 		}
 
@@ -885,8 +891,22 @@ func (wa *WebAnalyzer) loadApps(r io.Reader) error {
 		}
 
 		for _, impliedTech := range app.Implies {
-			wa.appsIndex.ImpliesByTech[impliedTech] =
-				append(wa.appsIndex.ImpliesByTech[impliedTech], key)
+			parts := strings.Split(impliedTech, `\;`)
+			implied := Implication{
+				Name:       strings.TrimSpace(parts[0]),
+				Confidence: 100,
+			}
+			for _, attribute := range parts[1:] {
+				if version, ok := strings.CutPrefix(attribute, "version:"); ok {
+					implied.Version = version
+				} else if value, ok := strings.CutPrefix(attribute, "confidence:"); ok {
+					if confidence, err := strconv.Atoi(value); err == nil {
+						implied.Confidence = max(0, min(100, confidence))
+					}
+				}
+			}
+			wa.appsIndex.ImpliesByTech[key] =
+				append(wa.appsIndex.ImpliesByTech[key], implied)
 		}
 
 	}

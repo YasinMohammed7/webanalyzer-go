@@ -100,8 +100,7 @@ type JSResult struct {
 }
 
 type Dependent struct {
-	Name         string
-	SkipRequires bool
+	Name string
 }
 
 func (m *Match) updateVersion(version string, confidence int) {
@@ -1052,10 +1051,13 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 	queue := []string{}
 
-	queued := make(map[string]bool)
+	queued := make(map[string]struct{})
 	detectedTechnologies := make(map[string]struct{})
 	detectedCategories := make(map[int]struct{})
 	notDetected := make(map[string]struct{})
+	matchIndexes := make(map[string]int)
+	var impliedQueue []string
+	impliedQueued := make(map[string]struct{})
 	detectionStart := time.Now()
 
 	for _, appname := range wa.appsIndex.Initial {
@@ -1080,22 +1082,15 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		detectedTechnologies[appname] = struct{}{}
 
-		for _, categoryID := range app.Cats {
-			detectedCategories[categoryID] = struct{}{}
-		}
-
+		matchIndexes[appname] = len(apps)
 		apps = append(apps, findings)
 
-		var requiresByCategory []string
-
-		for _, categoryID := range app.Cats {
-			requiresByCategory = append(
-				requiresByCategory,
-				wa.appsIndex.RequiresByCategory[categoryID]...,
-			)
+		if len(wa.appsIndex.ImpliesByTech[appname]) > 0 {
+			impliedQueue = append(impliedQueue, appname)
+			impliedQueued[appname] = struct{}{}
 		}
 
-		dependents := make([]Dependent, 0, len(wa.appsIndex.RequiresByTech[appname])+len(requiresByCategory)+len(wa.appsIndex.ImpliesByTech[appname]))
+		dependents := make([]Dependent, 0, len(wa.appsIndex.RequiresByTech[appname]))
 
 		for _, dependent := range wa.appsIndex.RequiresByTech[appname] {
 			dependents = append(dependents, Dependent{
@@ -1104,6 +1099,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 
 		for _, categoryID := range app.Cats {
+			if _, detected := detectedCategories[categoryID]; detected {
+				continue
+			}
+			detectedCategories[categoryID] = struct{}{}
 			for _, dependent := range wa.appsIndex.RequiresByCategory[categoryID] {
 				dependents = append(dependents, Dependent{
 					Name: dependent,
@@ -1111,24 +1110,94 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			}
 		}
 
-		for _, implied := range wa.appsIndex.ImpliesByTech[appname] {
-			dependents = append(dependents, Dependent{
-				Name:         implied,
-				SkipRequires: true,
-			})
-		}
-
 		// Enqueue dependents.
 		wa.enqueueDependents(dependents, &queue, queued, detectedTechnologies, notDetected)
 
 	}
 
-	for len(queue) > 0 {
+	for len(queue) > 0 || len(impliedQueue) > 0 {
+		// Give implication work priority so inferred prerequisites are available
+		// before the next fingerprint check. Process one source per iteration.
+		if len(impliedQueue) > 0 {
+			sourceName := impliedQueue[0]
+			impliedQueue = impliedQueue[1:]
+			delete(impliedQueued, sourceName)
+			// Copy the source because appending inferred results can grow apps.
+			source := apps[matchIndexes[sourceName]]
+
+			for _, implied := range wa.appsIndex.ImpliesByTech[sourceName] {
+				impliedApp, exists := appDefs[implied.Name]
+				if !exists {
+					continue
+				}
+
+				confidence := min(source.Confidence, implied.Confidence)
+				index, exists := matchIndexes[implied.Name]
+				if !exists {
+					index = len(apps)
+					matchIndexes[implied.Name] = index
+					apps = append(apps, Match{
+						AppName:    implied.Name,
+						App:        impliedApp,
+						Categories: wa.resolveCategories(impliedApp),
+					})
+					detectedTechnologies[implied.Name] = struct{}{}
+					delete(notDetected, implied.Name)
+				}
+
+				finding := &apps[index]
+				previousConfidence := finding.Confidence
+				// Keep one implication evidence entry per source when a stronger
+				// inference causes that source to be processed again.
+				var evidenceFound bool
+				for i := range finding.Matches {
+					evidence := &finding.Matches[i]
+					if evidence.Type == "implies" && evidence.Name == sourceName {
+						evidence.Confidence = max(evidence.Confidence, confidence)
+						evidenceFound = true
+						break
+					}
+				}
+				if evidenceFound {
+					finding.updateConfidence(confidence)
+					finding.updateVersion(implied.Version, confidence)
+				} else {
+					finding.addDetection("implies", sourceName, "", nil, implied.Version, confidence)
+				}
+
+				// Only new detections or stronger confidence need propagation.
+				// This also terminates implication cycles.
+				if len(wa.appsIndex.ImpliesByTech[implied.Name]) > 0 && (!exists || finding.Confidence > previousConfidence) {
+					if _, waiting := impliedQueued[implied.Name]; !waiting {
+						impliedQueue = append(impliedQueue, implied.Name)
+						impliedQueued[implied.Name] = struct{}{}
+					}
+				}
+				if exists {
+					continue
+				}
+
+				dependents := make([]Dependent, 0)
+				for _, dependent := range wa.appsIndex.RequiresByTech[implied.Name] {
+					dependents = append(dependents, Dependent{Name: dependent})
+				}
+				for _, categoryID := range impliedApp.Cats {
+					if _, detected := detectedCategories[categoryID]; detected {
+						continue
+					}
+					detectedCategories[categoryID] = struct{}{}
+					for _, dependent := range wa.appsIndex.RequiresByCategory[categoryID] {
+						dependents = append(dependents, Dependent{Name: dependent})
+					}
+				}
+				wa.enqueueDependents(dependents, &queue, queued, detectedTechnologies, notDetected)
+			}
+			continue
+		}
 
 		appname := queue[0]
 		queue = queue[1:]
 
-		skipRequires := queued[appname]
 		delete(queued, appname)
 
 		// Skip technologies already processed.
@@ -1145,37 +1214,33 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			continue
 		}
 
-		// Check prerequisites only when not implied.
-		if !skipRequires {
+		// Check technology prerequisites.
+		requirementsMet := true
 
-			// Check technology prerequisites.
-			requirementsMet := true
+		for _, requiredTech := range app.Requires {
+			if _, exists := detectedTechnologies[requiredTech]; !exists {
+				requirementsMet = false
+				break
+			}
+		}
 
-			for _, requiredTech := range app.Requires {
-				if _, exists := detectedTechnologies[requiredTech]; !exists {
-					requirementsMet = false
+		if !requirementsMet {
+			continue
+		}
+
+		// Check category prerequisites.
+		if len(app.RequiresCategory) > 0 {
+			categoryMet := false
+
+			for _, requiredCategory := range app.RequiresCategory {
+				if _, exists := detectedCategories[requiredCategory]; exists {
+					categoryMet = true
 					break
 				}
 			}
 
-			if !requirementsMet {
+			if !categoryMet {
 				continue
-			}
-
-			// Check category prerequisites.
-			if len(app.RequiresCategory) > 0 {
-				categoryMet := false
-
-				for _, requiredCategory := range app.RequiresCategory {
-					if _, exists := detectedCategories[requiredCategory]; exists {
-						categoryMet = true
-						break
-					}
-				}
-
-				if !categoryMet {
-					continue
-				}
 			}
 		}
 
@@ -1196,11 +1261,13 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		// Successfully detected.
 		detectedTechnologies[appname] = struct{}{}
 
-		for _, categoryID := range app.Cats {
-			detectedCategories[categoryID] = struct{}{}
-		}
-
+		matchIndexes[appname] = len(apps)
 		apps = append(apps, findings)
+
+		if len(wa.appsIndex.ImpliesByTech[appname]) > 0 {
+			impliedQueue = append(impliedQueue, appname)
+			impliedQueued[appname] = struct{}{}
+		}
 
 		// Collect dependents.
 		dependents := make([]Dependent, 0)
@@ -1212,6 +1279,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		}
 
 		for _, categoryID := range app.Cats {
+			if _, detected := detectedCategories[categoryID]; detected {
+				continue
+			}
+			detectedCategories[categoryID] = struct{}{}
 			for _, dependent := range wa.appsIndex.RequiresByCategory[categoryID] {
 				dependents = append(dependents, Dependent{
 					Name: dependent,
@@ -1219,23 +1290,17 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			}
 		}
 
-		for _, implied := range wa.appsIndex.ImpliesByTech[appname] {
-			dependents = append(dependents, Dependent{
-				Name:         implied,
-				SkipRequires: true,
-			})
-		}
-
 		// Enqueue dependents without duplicates.
 		wa.enqueueDependents(dependents, &queue, queued, detectedTechnologies, notDetected)
 	}
 
 	log.Printf(
-		"[DETECTION] Total time: %s | Detected: %d | Not detected: %d | Total evaluated: %d",
+		"[DETECTION] Total time: %s | Detected: %d | Not detected: %d | Total evaluated: %d | Skipped: %d",
 		time.Since(detectionStart),
 		len(detectedTechnologies),
 		len(notDetected),
 		len(detectedTechnologies)+len(notDetected),
+		len(appDefs)-len(detectedTechnologies)-len(notDetected),
 	)
 
 	return apps, links, finalURL, nil
@@ -1444,7 +1509,7 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 func (wa *WebAnalyzer) enqueueDependents(
 	dependents []Dependent,
 	queue *[]string,
-	queued map[string]bool,
+	queued map[string]struct{},
 	detectedTechnologies map[string]struct{},
 	notDetected map[string]struct{},
 ) {
@@ -1460,15 +1525,11 @@ func (wa *WebAnalyzer) enqueueDependents(
 		}
 
 		if _, exists := queued[name]; exists {
-			// If any technology implies it, skip prerequisite validation.
-			if dependent.SkipRequires {
-				queued[name] = true
-			}
 			continue
 		}
 
 		*queue = append(*queue, name)
-		queued[name] = dependent.SkipRequires
+		queued[name] = struct{}{}
 	}
 }
 
