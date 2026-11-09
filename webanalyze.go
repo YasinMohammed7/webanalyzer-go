@@ -54,6 +54,7 @@ type DetectionMatch struct {
 	Name       string     `json:"name,omitempty"`
 	Value      string     `json:"value,omitempty"`
 	Matches    [][]string `json:"matches,omitempty"`
+	Version    string     `json:"version,omitempty"`
 	Confidence int        `json:"confidence"`
 }
 
@@ -134,6 +135,7 @@ func (m *Match) addDetection(
 		Name:       name,
 		Value:      value,
 		Matches:    matches,
+		Version:    version,
 		Confidence: confidence,
 	})
 
@@ -777,6 +779,202 @@ func (wa *WebAnalyzer) detectApp(
 	return findings
 }
 
+func collectExclusions(apps []Match) map[string]struct{} {
+	excluded := make(map[string]struct{})
+
+	for _, app := range apps {
+		for _, name := range app.Excludes {
+			excluded[name] = struct{}{}
+		}
+	}
+
+	return excluded
+}
+
+func filterExcluded(apps []Match, excluded map[string]struct{}) []Match {
+	filtered := make([]Match, 0, len(apps))
+
+	for _, app := range apps {
+		if _, skip := excluded[app.AppName]; skip {
+			continue
+		}
+
+		filtered = append(filtered, app)
+	}
+
+	return filtered
+}
+
+func requirementsSatisfied(
+	app App,
+	technologies map[string]struct{},
+	categories map[int]struct{},
+) bool {
+	for _, name := range app.Requires {
+		if _, exists := technologies[name]; !exists {
+			return false
+		}
+	}
+
+	if len(app.RequiresCategory) == 0 {
+		return true
+	}
+
+	for _, categoryID := range app.RequiresCategory {
+		if _, exists := categories[categoryID]; exists {
+			return true
+		}
+	}
+
+	return false
+}
+
+func filterImplicationEvidence(
+	matches []DetectionMatch,
+	technologies map[string]struct{},
+) []DetectionMatch {
+	filtered := make([]DetectionMatch, 0, len(matches))
+
+	for _, evidence := range matches {
+		if evidence.Type == "implies" {
+			if _, exists := technologies[evidence.Name]; !exists {
+				continue
+			}
+		}
+
+		filtered = append(filtered, evidence)
+	}
+
+	return filtered
+}
+
+func (m *Match) rebuildFromEvidence() {
+	m.Confidence = 0
+	m.Version = ""
+	m.versionConfidence = 0
+
+	for _, evidence := range m.Matches {
+		m.updateConfidence(evidence.Confidence)
+		m.updateVersion(evidence.Version, evidence.Confidence)
+	}
+}
+
+func supportedTechnologies(apps []Match) map[string]struct{} {
+	supported := make(map[string]struct{})
+	for _, app := range apps {
+		for _, evidence := range app.Matches {
+			if evidence.Type != "implies" {
+				supported[app.AppName] = struct{}{}
+				break
+			}
+		}
+	}
+	for {
+		changed := false
+		for _, app := range apps {
+			if _, exists := supported[app.AppName]; exists {
+				continue
+			}
+			for _, evidence := range app.Matches {
+				if evidence.Type == "implies" {
+					if _, exists := supported[evidence.Name]; exists {
+						supported[app.AppName] = struct{}{}
+						changed = true
+						break
+					}
+				}
+			}
+		}
+		if !changed {
+			return supported
+		}
+	}
+}
+
+// Rebuild implication confidence from direct evidence, so cycles cannot retain
+// confidence contributed by a source that has been excluded.
+func rebuildImplicationConfidence(apps []Match) {
+	confidence := make(map[string]int, len(apps))
+	for _, app := range apps {
+		for _, evidence := range app.Matches {
+			if evidence.Type != "implies" {
+				confidence[app.AppName] = max(confidence[app.AppName], evidence.Confidence)
+			}
+		}
+	}
+	for {
+		changed := false
+		for _, app := range apps {
+			for _, evidence := range app.Matches {
+				if evidence.Type != "implies" {
+					continue
+				}
+				value := min(confidence[evidence.Name], evidence.Confidence)
+				if value > confidence[app.AppName] {
+					confidence[app.AppName] = value
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	for i := range apps {
+		for j := range apps[i].Matches {
+			evidence := &apps[i].Matches[j]
+			if evidence.Type == "implies" {
+				evidence.Confidence = min(evidence.Confidence, confidence[evidence.Name])
+			}
+		}
+		apps[i].rebuildFromEvidence()
+	}
+}
+
+func applyExclusions(apps []Match) ([]Match, int) {
+	// All detected rules apply simultaneously. Mutual exclusions remove both
+	// technologies; exclusion chains retain every original exclusion decision.
+	excluded := collectExclusions(apps)
+	if len(excluded) == 0 {
+		return apps, 0
+	}
+	originalCount := len(apps)
+	apps = filterExcluded(apps, excluded)
+	excludedCount := originalCount - len(apps)
+	if excludedCount == 0 {
+		return apps, 0
+	}
+	for {
+		technologies := supportedTechnologies(apps)
+		categories := make(map[int]struct{})
+		for _, app := range apps {
+			if _, supported := technologies[app.AppName]; supported {
+				for _, categoryID := range app.Cats {
+					categories[categoryID] = struct{}{}
+				}
+			}
+		}
+		remaining := make([]Match, 0, len(apps))
+		for _, app := range apps {
+			if _, supported := technologies[app.AppName]; !supported {
+				continue
+			}
+			if !requirementsSatisfied(app.App, technologies, categories) {
+				continue
+			}
+			app.Matches = filterImplicationEvidence(app.Matches, technologies)
+			remaining = append(remaining, app)
+		}
+		stable := len(remaining) == len(apps)
+		apps = remaining
+		if stable {
+			break
+		}
+	}
+	rebuildImplicationConfidence(apps)
+	return apps, excludedCount
+}
+
 // do http request and analyze response
 func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []string, string, error) {
 	var apps = make([]Match, 0)
@@ -1145,6 +1343,11 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 				for i := range finding.Matches {
 					evidence := &finding.Matches[i]
 					if evidence.Type == "implies" && evidence.Name == sourceName {
+						if implied.Version != "" &&
+							(evidence.Version == "" || confidence > evidence.Confidence) {
+							evidence.Version = implied.Version
+						}
+
 						evidence.Confidence = max(evidence.Confidence, confidence)
 						evidenceFound = true
 						break
@@ -1286,13 +1489,18 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		wa.enqueueDependents(dependents, &queue, queued, detectedTechnologies, notDetected)
 	}
 
+	evaluatedCount := len(detectedTechnologies) + len(notDetected)
+	detectedCount := len(apps)
+	apps, excludedCount := applyExclusions(apps)
 	log.Printf(
-		"[DETECTION] Total time: %s | Detected: %d | Not detected: %d | Total evaluated: %d | Skipped: %d",
+		"[DETECTION] Total time: %s | Detected: %d | Excluded: %d | Removed dependents: %d | Not detected: %d | Total evaluated: %d | Skipped: %d",
 		time.Since(detectionStart),
-		len(detectedTechnologies),
+		len(apps),
+		excludedCount,
+		detectedCount-len(apps)-excludedCount,
 		len(notDetected),
-		len(detectedTechnologies)+len(notDetected),
-		len(appDefs)-len(detectedTechnologies)-len(notDetected),
+		evaluatedCount,
+		len(appDefs)-evaluatedCount,
 	)
 
 	return apps, links, finalURL, nil
