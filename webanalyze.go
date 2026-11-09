@@ -283,20 +283,12 @@ func fetchHost(urlStr string, client *http.Client, followRedirect bool) (*http.R
 
 				}
 
-				baseURL, err := url.Parse(urlStr)
-				if err != nil {
-					return http.ErrUseLastResponse
-				}
-
-				if !isSubdomain(baseURL, req.URL) {
-					return http.ErrUseLastResponse
-				}
-
 				return nil
 			},
 		}
 	}
 	req, err := http.NewRequest("GET", urlStr, nil)
+
 	if err != nil {
 		return nil, err
 	}
