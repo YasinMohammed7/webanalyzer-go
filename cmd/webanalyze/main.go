@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -183,6 +184,15 @@ func main() {
 		log.Printf("warning: %v is older than a week", techsFilename)
 	}
 
+	var discoverer *webanalyze.SubdomainDiscoverer
+
+	if searchSubdomain {
+		discoverer, err = webanalyze.NewSubdomainDiscoverer()
+		if err != nil {
+			log.Fatalf("initialize subdomain discovery: %v", err)
+		}
+	}
+
 	start := time.Now()
 
 	technologyCount := make(map[string]int)
@@ -209,7 +219,7 @@ func main() {
 		wg.Go(func() {
 
 			for host := range hosts {
-				job := webanalyze.NewOnlineJob(host, "", nil, crawlCount, searchSubdomain, redirect)
+				job := webanalyze.NewOnlineJob(host, "", nil, crawlCount, false, redirect)
 
 				if crawlCount > 0 {
 					results := wa.Crawl(job)
@@ -228,7 +238,30 @@ func main() {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		hosts <- scanner.Text()
+		domain := strings.TrimSpace(scanner.Text())
+		if domain == "" {
+			continue
+		}
+
+		hosts <- domain // Scan the original input.
+
+		if discoverer == nil {
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 30*time.Second,
+		)
+		names, err := discoverer.Discover(ctx, domain)
+		cancel()
+
+		if err != nil {
+			log.Printf("discover %s: %v", domain, err)
+		}
+
+		for _, name := range names {
+			hosts <- name
+		}
 	}
 
 	if err := scanner.Err(); err != nil {

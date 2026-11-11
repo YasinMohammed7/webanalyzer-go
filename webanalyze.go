@@ -434,7 +434,7 @@ func (wa *WebAnalyzer) crawlBFS(job *Job) []Result {
 			"",
 			nil,
 			0, // important: Process only this page
-			job.SearchSubdomain,
+			false,
 			job.followRedirect,
 		)
 
