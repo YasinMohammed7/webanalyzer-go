@@ -783,6 +783,9 @@ func collectExclusions(apps []Match) map[string]struct{} {
 	excluded := make(map[string]struct{})
 
 	for _, app := range apps {
+		if app.Confidence <= 0 {
+			continue
+		}
 		for _, name := range app.Excludes {
 			excluded[name] = struct{}{}
 		}
@@ -863,7 +866,7 @@ func supportedTechnologies(apps []Match) map[string]struct{} {
 	supported := make(map[string]struct{})
 	for _, app := range apps {
 		for _, evidence := range app.Matches {
-			if evidence.Type != "implies" {
+			if evidence.Type != "implies" && evidence.Confidence > 0 {
 				supported[app.AppName] = struct{}{}
 				break
 			}
@@ -876,7 +879,7 @@ func supportedTechnologies(apps []Match) map[string]struct{} {
 				continue
 			}
 			for _, evidence := range app.Matches {
-				if evidence.Type == "implies" {
+				if evidence.Type == "implies" && evidence.Confidence > 0 {
 					if _, exists := supported[evidence.Name]; exists {
 						supported[app.AppName] = struct{}{}
 						changed = true
@@ -1245,6 +1248,9 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 	detectedTechnologies := make(map[string]struct{})
 	detectedCategories := make(map[int]struct{})
 	notDetected := make(map[string]struct{})
+	// Version-only evidence is retained for later positive implications, but
+	// cannot activate exclusions, prerequisites, or implications by itself.
+	candidates := make(map[string]Match)
 	matchIndexes := make(map[string]int)
 	var impliedQueue []string
 	impliedQueued := make(map[string]struct{})
@@ -1265,7 +1271,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			cssCollector, scriptCollector, domResults,
 		)
 
-		if len(findings.Matches) == 0 {
+		if findings.Confidence <= 0 {
+			if len(findings.Matches) > 0 {
+				candidates[appname] = findings
+			}
 			notDetected[appname] = struct{}{}
 			continue
 		}
@@ -1322,15 +1331,22 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 				}
 
 				confidence := min(source.Confidence, implied.Confidence)
+				if confidence <= 0 {
+					continue
+				}
 				index, exists := matchIndexes[implied.Name]
 				if !exists {
 					index = len(apps)
 					matchIndexes[implied.Name] = index
-					apps = append(apps, Match{
-						AppName:    implied.Name,
-						App:        impliedApp,
-						Categories: wa.resolveCategories(impliedApp),
-					})
+					finding, hasCandidate := candidates[implied.Name]
+					if !hasCandidate {
+						finding = Match{
+							AppName:    implied.Name,
+							App:        impliedApp,
+							Categories: wa.resolveCategories(impliedApp),
+						}
+					}
+					apps = append(apps, finding)
 					detectedTechnologies[implied.Name] = struct{}{}
 					delete(notDetected, implied.Name)
 				}
@@ -1448,7 +1464,10 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 			cssCollector, scriptCollector, domResults,
 		)
 
-		if len(findings.Matches) == 0 {
+		if findings.Confidence <= 0 {
+			if len(findings.Matches) > 0 {
+				candidates[appname] = findings
+			}
 			notDetected[appname] = struct{}{}
 			continue
 		}

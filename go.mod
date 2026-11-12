@@ -1,4 +1,4 @@
-module github.com/rverton/webanalyze
+module github.com/YasinMohammed7/webanalyzer-go
 
 go 1.26.0
 
