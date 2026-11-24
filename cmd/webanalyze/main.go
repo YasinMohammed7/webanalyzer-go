@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YasinMohammed7/webanalyzer-go"
+	webanalyze "github.com/YasinMohammed7/webanalyzer-go"
 )
 
 var (
@@ -43,9 +43,9 @@ func init() {
 	flag.StringVar(&hosts, "hosts", "", "filename with hosts, one host per line.")
 	flag.IntVar(&crawlCount, "crawl", 0, "links to follow from the root page (default 0)")
 	flag.BoolVar(&searchSubdomain, "search", false, "searches all urls with same base domain (i.e. example.com and sub.example.com)")
-	flag.BoolVar(&silent, "silent", false, "avoid printing header (default false)")
-	flag.BoolVar(&redirect, "redirect", true, "follow http redirects (default true)")
-	flag.BoolVar(&browser, "browser", true, "enable browser automation (default true)")
+	flag.BoolVar(&silent, "silent", false, "avoid printing header")
+	flag.BoolVar(&redirect, "redirect", true, "follow http redirects")
+	flag.BoolVar(&browser, "browser", true, "enable browser automation")
 }
 
 func main() {

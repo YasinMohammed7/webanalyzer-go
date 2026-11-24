@@ -4501,10 +4501,6 @@
   "cats": [
    62
   ],
-  "headers": {
-   "server": "^volt-adc$",
-   "x-volterra-location": ""
-  },
   "implies": [
    "Akamai"
   ],
@@ -25776,6 +25772,26 @@
   "website": "https://www.cookiehub.com",
   "icon": "CookieHub.svg"
  },
+ "CookieOfficer": {
+  "description": "CookieOfficer is a consent management platform for websites with cookie scanning, automatic script blocking and Google Consent Mode v2 support.",
+  "saas": true,
+  "pricing": [
+   "low",
+   "freemium",
+   "recurring"
+  ],
+  "cats": [
+   67
+  ],
+  "cookies": {
+   "co_consent": ""
+  },
+  "scriptSrc": [
+   "cdn\\.cookieofficer\\.com/s/co-"
+  ],
+  "website": "https://cookieofficer.com",
+  "icon": "CookieOfficer.svg"
+ },
  "CookieYes": {
   "cats": [
    67
@@ -36122,6 +36138,32 @@
   "website": "https://evvnt.com",
   "icon": "Evvnt.svg"
  },
+ "ExaSpark": {
+  "description": "ExaSpark is an AI app builder that builds, publishes and hosts websites and Android apps from a text prompt.",
+  "saas": true,
+  "pricing": [
+   "freemium",
+   "low",
+   "recurring"
+  ],
+  "cats": [
+   51,
+   112
+  ],
+  "dom": {
+   "a#spk-badge[data-spk-badge][href^='https://exaspark.ai/']": {}
+  },
+  "meta": {
+   "generator": [
+    "^ExaSpark$"
+   ]
+  },
+  "url": [
+   "^https?://[a-z0-9-]+\\.exaspark\\.app/"
+  ],
+  "website": "https://exaspark.ai",
+  "icon": "ExaSpark.svg"
+ },
  "ExactMetrics": {
   "description": "ExactMetrics (formerly Google Analytics Dashboard for WP) plugin helps you properly setup all the powerful Google Analytics tracking features without writing any code or hiring a developer.",
   "pricing": [
@@ -36734,8 +36776,12 @@
    62
   ],
   "headers": {
-   "X-Volterra-Location": ""
+   "server": "^volt-(?:adc|cdn)$",
+   "x-volterra-location": ""
   },
+  "implies": [
+   "Envoy"
+  ],
   "website": "https://www.f5.com/products/distributed-cloud-services",
   "icon": "F5DistributedCloudServices.svg"
  },
@@ -48860,6 +48906,28 @@
   ],
   "website": "https://helponclick.com",
   "icon": "HelpOnClick.svg"
+ },
+ "Helpvane": {
+  "description": "Helpvane is an AI customer support chat widget and shopper assistant for websites and online stores.",
+  "cats": [
+   52
+  ],
+  "js": {
+   "HelpvaneWidget": ""
+  },
+  "dom": {
+   "div[data-helpvane-widget]": {}
+  },
+  "meta": {
+   "generator": [
+    "^Helpvane$"
+   ]
+  },
+  "scriptSrc": [
+   "helpvane\\.com/widget/widget\\.js"
+  ],
+  "website": "https://helpvane.com",
+  "icon": "Helpvane.svg"
  },
  "Helpwise": {
   "description": "Helpwise is a customer service platform that helps you manage all customer communication from a single place.",
@@ -62651,6 +62719,30 @@
   "website": "https://lovable.dev",
   "icon": "Lovable.svg"
  },
+ "LovedByAI": {
+  "description": "LovedByAI is a WordPress plugin for AI search optimisation (generative engine optimisation) that adds structured data and tracks referral traffic from AI assistants.",
+  "saas": true,
+  "cats": [
+   54,
+   87
+  ],
+  "js": {
+   "geoguru_llm_tracking.proxyUrl": "/wp-json/geoguru/v1/llm-source-event"
+  },
+  "dom": [
+   "script#geoguru-llm-tracking-js-before",
+   "script#geoguru-llm-tracking-js-after",
+   "style#geoguru-llm-link-styles-inline-css"
+  ],
+  "probe": {
+   "/wp-json/geoguru/v1/reachability": "\"plugin\":\"geoguru\".*\"plugin_version\":\"([\\d.]+)\"\\;version:\\1"
+  },
+  "requires": [
+   "WordPress"
+  ],
+  "website": "https://www.lovedby.ai",
+  "icon": "LovedByAI.png"
+ },
  "Lovi": {
   "description": "Lovi is a tool that enables the creation of customized ChatGPT instances for customer support, delivering automated, and personalized customer service.",
   "saas": true,
@@ -68482,6 +68574,24 @@
   ],
   "website": "https://www.modalforms.com",
   "icon": "ModalForms.svg"
+ },
+ "Model Context Protocol": {
+  "description": "Model Context Protocol (MCP) is an open protocol that connects AI applications to external tools and data sources.",
+  "oss": true,
+  "cats": [
+   112
+  ],
+  "headers": {
+   "Access-Control-Allow-Headers": "\\bmcp-(?:session-id|protocol-version)\\b",
+   "Access-Control-Expose-Headers": "\\bmcp-(?:session-id|protocol-version)\\b",
+   "Mcp-Session-Id": "",
+   "WWW-Authenticate": "resource_metadata=\"https?://[^\"]+/\\.well-known/oauth-protected-resource/mcp/?\""
+  },
+  "text": [
+   "^This URL can only be accessed with a MCP client\\.$"
+  ],
+  "website": "https://modelcontextprotocol.io",
+  "icon": "Model Context Protocol.svg"
  },
  "Modelo": {
   "description": "Modelo is a 3D viewer and model platform that allows users to edit, share, and collaborate on digital models.",
@@ -76874,6 +76984,23 @@
   "website": "https://outplay.ai",
   "icon": "Outplay.svg"
  },
+ "Outpush": {
+  "description": "Outpush monetizes web push notifications; publishers load an SDK from cdn.pushmaster-cdn.xyz which beacons to ingest.pushmaster-cdn.xyz.",
+  "cats": [
+   36
+  ],
+  "js": {
+   "pushmasterTag": ""
+  },
+  "scriptSrc": [
+   "\\.pushmaster-cdn\\.xyz/"
+  ],
+  "xhr": [
+   "\\.pushmaster-cdn\\.xyz"
+  ],
+  "website": "https://outpush.io",
+  "icon": "Outpush.png"
+ },
  "Ova": {
   "description": "Ova is a website builder platform from Australia.",
   "saas": true,
@@ -77130,6 +77257,26 @@
   },
   "website": "https://www.pcrecruiter.net",
   "icon": "PCRecruiter.svg"
+ },
+ "PDF Embedder": {
+  "description": "PDF Embedder is a WordPress plugin that embeds PDF files in posts and pages with a responsive viewer.",
+  "oss": true,
+  "cats": [
+   5,
+   87
+  ],
+  "dom": [
+   "link[href*='/wp-content/plugins/pdf-embedder/']"
+  ],
+  "requires": [
+   "WordPress"
+  ],
+  "scriptSrc": [
+   "/wp-content/plugins/pdf-embedder/",
+   "/plugins/pdf-embedder/assets/js/pdfemb\\.min\\.js\\?ver=(\\d+\\.\\d+(?:\\.\\d+)*)\\;version:\\1"
+  ],
+  "website": "https://wordpress.org/plugins/pdf-embedder/",
+  "icon": "PDF Embedder.png"
  },
  "PDF.js": {
   "cats": [
@@ -86587,6 +86734,28 @@
   "website": "https://www.qoreai.com",
   "icon": "QoreAI.svg"
  },
+ "Qorfechi": {
+  "description": "Qorfechi is a hosted website builder and CMS from Iran with online store, CRM, booking and online course modules.",
+  "saas": true,
+  "cats": [
+   1,
+   6,
+   51
+  ],
+  "js": {
+   "Qorfechi.platform": "^Qorfechi$"
+  },
+  "headers": {
+   "X-Powered-By": "^QorfeChi$"
+  },
+  "meta": {
+   "generator": [
+    "^QorfeChi$"
+   ]
+  },
+  "website": "https://qorfechi.com",
+  "icon": "Qorfechi.svg"
+ },
  "Qpien": {
   "description": "Qpien is a SaaS platform that provides multi-channel customer communication management with AI reply automation, smart inbox, call center integration, and workflow orchestration.",
   "saas": true,
@@ -93690,6 +93859,30 @@
   "website": "https://simgroep.nl/internet/portfolio-contentbeheer_41623/",
   "icon": "SIMsite.png"
  },
+ "SLAED CMS": {
+  "description": "SLAED CMS is a free and open-source content management system written in PHP.",
+  "oss": true,
+  "cats": [
+   1
+  ],
+  "text": [
+   "Powered by Open SLAED",
+   "Powered by SLAED CMS"
+  ],
+  "implies": [
+   "PHP"
+  ],
+  "meta": {
+   "generator": [
+    "^(?:SLAED CMS(?: ([\\d.]+))?|Open SLAED)\\;version:\\1"
+   ],
+   "sl-token": [
+    ""
+   ]
+  },
+  "website": "https://slaed.net",
+  "icon": "SLAED CMS.svg"
+ },
  "SM Sold": {
   "description": "SM Sold is a platform providing integrated solutions for real estate agents and brokers to manage listings, client interactions, and transactions.",
   "saas": true,
@@ -94842,6 +95035,17 @@
   "website": "https://www.gosameday.com",
   "icon": "Sameday.svg"
  },
+ "Samhub": {
+  "description": "Samhub is a Swedish data/advertising platform whose collection runs on dep-x.com and brainnordic.com hosts.",
+  "cats": [
+   36
+  ],
+  "xhr": [
+   "(?:\\.dep-x\\.com|\\.brainnordic\\.com)"
+  ],
+  "website": "https://samhub.io",
+  "icon": "Samhub.png"
+ },
  "Samsung Food": {
   "description": "Samsung Food is an all-in-one app for recipe saving, meal planning, grocery shopping, and recipe sharing.",
   "saas": true,
@@ -95394,6 +95598,19 @@
   ],
   "website": "https://www.scheduleanyone.com",
   "icon": "ScheduleAnyone.svg"
+ },
+ "Schedulicity": {
+  "cats": [
+   72
+  ],
+  "dom": [
+   "a[href*='schedulicity.com/scheduling/']"
+  ],
+  "scripts": [
+   "api\\.schedulicity\\.com"
+  ],
+  "website": "https://www.schedulicity.com",
+  "icon": "Schedulicity.png"
  },
  "Schema App": {
   "description": "Schema App is a tool that converts website content into schema markup, the language of search.",
@@ -97374,6 +97591,26 @@
   "website": "https://sevenrooms.com",
   "icon": "SevenRooms.svg"
  },
+ "Sevio": {
+  "description": "Sevio is an ad platform; sites load its loader from cdn.adx.ws, declare sevioads placements and request adx.ws endpoints.",
+  "cats": [
+   36
+  ],
+  "js": {
+   "sevioads": ""
+  },
+  "dom": [
+   "ins.sevioads"
+  ],
+  "scriptSrc": [
+   "cdn\\.adx\\.ws/"
+  ],
+  "xhr": [
+   "\\.adx\\.ws"
+  ],
+  "website": "https://sevio.com",
+  "icon": "Sevio.png"
+ },
  "Sezzle": {
   "description": "Sezzle offers a buy-now-pay-later solution.",
   "saas": true,
@@ -98153,6 +98390,36 @@
   },
   "website": "https://www.shopfactory.com",
   "icon": "ShopFactory.svg"
+ },
+ "ShopFast": {
+  "description": "ShopFast is a hosted ecommerce platform for selling digital products, with customisable storefronts on shopfa.st subdomains or custom domains.",
+  "saas": true,
+  "pricing": [
+   "freemium",
+   "low",
+   "recurring"
+  ],
+  "cats": [
+   6
+  ],
+  "dom": [
+   "a.sf-powered[href^='https://shopfa.st/']",
+   "img[src^='https://media.shopfa.st/']",
+   "script#sf-skeletons[type='application/json']"
+  ],
+  "meta": {
+   "sf:page-type": [
+    ""
+   ]
+  },
+  "scriptSrc": [
+   "/_sf/runtime\\.[\\da-f]{12}\\.js"
+  ],
+  "url": [
+   "^https?://[^/]+\\.shopfa\\.st/"
+  ],
+  "website": "https://shopfa.st",
+  "icon": "ShopFast.svg"
  },
  "ShopGate": {
   "description": "ShopGate is a provider of omnichannel commerce solutions.",
@@ -106298,6 +106565,53 @@
   "website": "https://stenciljs.com",
   "icon": "Stencil.svg"
  },
+ "Stencil (hellostencil.com)": {
+  "description": "Stencil is an AI app builder that creates, hosts and publishes web apps from a plain-language description.",
+  "saas": true,
+  "pricing": [
+   "low",
+   "freemium",
+   "recurring"
+  ],
+  "cats": [
+   51
+  ],
+  "meta": {
+   "generator": [
+    "^Stencil \\(hellostencil\\.com\\)$"
+   ]
+  },
+  "website": "https://hellostencil.com",
+  "icon": "hellostencil.png"
+ },
+ "SterkCommerce": {
+  "description": "SterkCommerce is a headless e-commerce platform and CMS (Next.js storefront with Magento or custom backends) by Sterk Commerce.",
+  "cats": [
+   6,
+   1
+  ],
+  "cookies": {
+   "sterk_search_bucket": ""
+  },
+  "js": {
+   "SterkCommerce.name": "^SterkCommerce$",
+   "SterkCommerce.version": "^(.+)$\\;version:\\1"
+  },
+  "headers": {
+   "X-Powered-By": "^SterkCommerce$"
+  },
+  "implies": [
+   "Next.js",
+   "React"
+  ],
+  "meta": {
+   "generator": [
+    "^SterkCommerce(?: Cloud)?(?: ([\\d.]+))?$\\;version:\\1"
+   ]
+  },
+  "website": "https://sterkcommerce.com",
+  "icon": "SterkCommerce.png"
+ },
  "Stetic Analytics": {
   "description": "Stetic Analytics is a platform that consolidates data tracking, reporting, and insights into a single system.",
   "saas": true,
@@ -107781,6 +108095,26 @@
   "website": "https://www.superbuzz.io",
   "icon": "SuperBuzz.svg"
  },
+ "SuperHosting.BG": {
+  "description": "SuperHosting.BG is a Bulgarian web hosting provider, part of the team.blue group.",
+  "cats": [
+   88
+  ],
+  "dns": {
+   "NS": [
+    "superhosting\\.bg",
+    "superdnsserver\\.net",
+    "bgdns\\.net"
+   ],
+   "SOA": [
+    "superhosting\\.bg",
+    "superdnsserver\\.net",
+    "bgdns\\.net"
+   ]
+  },
+  "website": "https://www.superhosting.bg",
+  "icon": "SuperHosting.BG.png"
+ },
  "SuperHote": {
   "description": "SuperHote is a hotel management software designed to streamline hotel bookings, reservations, and other management tasks.",
   "saas": true,
@@ -108479,6 +108813,19 @@
   ],
   "website": "https://swiperjs.com",
   "icon": "Swiper.svg"
+ },
+ "Swizzonic": {
+  "description": "Swizzonic is a Swiss registrar/hosting provider; hosted domains use swizzonic.ch nameservers.",
+  "cats": [
+   88
+  ],
+  "dns": {
+   "NS": [
+    "\\.swizzonic\\.ch"
+   ]
+  },
+  "website": "https://swizzonic.ch",
+  "icon": "Swizzonic.png"
  },
  "Swoogo": {
   "description": "Swoogo is an event management software.",
@@ -113461,6 +113808,17 @@
   ],
   "website": "https://www.tix.com",
   "icon": "Tix.svg"
+ },
+ "ToberHost": {
+  "description": "ToberHost is an Indonesian web hosting and website development provider.",
+  "cats": [
+   88
+  ],
+  "headers": {
+   "X-Powered-By": "ToberHost"
+  },
+  "website": "https://toberhost.com",
+  "icon": "ToberHost.svg"
  },
  "TocToc": {
   "description": "Tolstoy is a BPM platform enabling the modeling, automation, and optimization of business processes, simplifying workflows and expediting tasks.",
@@ -122811,6 +123169,27 @@
   ],
   "website": "https://www.wasteconnections.com",
   "icon": "WasteConnections.svg"
+ },
+ "Watch Music Web API": {
+  "description": "Watch Music Web API endpoints return JSON metadata about music artists, albums, tracks and playlists from the Watch Music catalogue, and give OAuth 2.0 access to listener libraries and playback.",
+  "pricing": [
+   "freemium"
+  ],
+  "cats": [
+   19
+  ],
+  "js": {
+   "WatchMusicWebAPI.version": "^(.+)$\\;version:\\1"
+  },
+  "dom": [
+   "html[data-watchmusic-web-api]"
+  ],
+  "scriptSrc": [
+   "sdk\\.watchmusic\\.app/web-api/v\\d+\\.js",
+   "developers\\.watchmusic\\.app/sdk/v\\d+/web-api\\.js"
+  ],
+  "website": "https://developers.watchmusic.app",
+  "icon": "WatchMusic.svg"
  },
  "WatchThem": {
   "description": "WatchThem is a behavioural tool that allows website owners to view video recordings of their visitors' journeys on their website.",
@@ -132337,6 +132716,26 @@
   ],
   "website": "https://www.eucookie.eu/",
   "icon": "eucookie.svg"
+ },
+ "evoSeller": {
+  "description": "evoSeller is a CRM for e-commerce and service businesses with WhatsApp messaging, marketing automation, campaigns and AI agents.",
+  "saas": true,
+  "pricing": [
+   "mid",
+   "recurring"
+  ],
+  "cats": [
+   32,
+   53
+  ],
+  "js": {
+   "evoSeller.version": "^([\\d.]+)$\\;version:\\1"
+  },
+  "scriptSrc": [
+   "//(?:api|app)\\.evoseller\\.com/(?:tracker|popups|loja)\\.js"
+  ],
+  "website": "https://evoseller.com",
+  "icon": "evoSeller.svg"
  },
  "ewiz commerce": {
   "description": "ewiz commerce is a B2B solution that integrates advanced eCommerce technology and AI to help manufacturers, distributors, and wholesalers streamline operations and improve ROI.",
