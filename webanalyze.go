@@ -1107,7 +1107,15 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 
 		cssCollector = wa.browser.CollectCSS(browserCtx, wa.cssRegexes)
 
-		scriptCollector = wa.browser.CollectScripts(browserCtx, wa.scriptRegexes)
+		scriptCollector, err = wa.browser.CollectScripts(browserCtx, wa.scriptRegexes)
+
+		if err != nil {
+			fmt.Printf(
+				"BROWSER SCRIPT COLLECTOR ERROR %s: %v\n",
+				pageURL,
+				err,
+			)
+		}
 
 		var setupErr error
 
