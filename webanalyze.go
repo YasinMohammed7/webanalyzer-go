@@ -1650,8 +1650,7 @@ func (wa *WebAnalyzer) EvaluateApp(app App, rawResults map[string][]elementData)
 			if rule.Text != nil {
 				m, v, c := findMatches(el.Text, []AppRegexp{*rule.Text})
 				if len(m) == 0 {
-					matched = false
-					break
+					continue
 				}
 				allMatches = append(allMatches, m...)
 				if v != "" {
