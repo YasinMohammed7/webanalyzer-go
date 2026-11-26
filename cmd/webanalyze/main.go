@@ -133,7 +133,6 @@ func main() {
 
 	var wg sync.WaitGroup
 	var collectorWG sync.WaitGroup
-	hosts := make(chan string)
 	resultCh := make(chan webanalyze.Result)
 
 	techsFile, err := os.Open(techsFilename)
@@ -215,6 +214,37 @@ func main() {
 		}
 	})
 
+	var roots []string
+	seen := make(map[string]struct{})
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		root := strings.TrimSpace(scanner.Text())
+
+		if root == "" {
+			continue
+		}
+
+		if _, exists := seen[root]; exists {
+			continue
+		}
+
+		seen[root] = struct{}{}
+
+		roots = append(roots, root)
+
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	hosts := make(chan string, len(roots))
+
+	for _, root := range roots {
+		hosts <- root
+	}
+
 	for i := 0; i < workers; i++ {
 		wg.Go(func() {
 
@@ -236,36 +266,41 @@ func main() {
 		})
 	}
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		domain := strings.TrimSpace(scanner.Text())
-		if domain == "" {
-			continue
-		}
+	if discoverer != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		reader, writer := io.Pipe()
 
-		hosts <- domain // Scan the original input.
+		var discoverWG sync.WaitGroup
 
-		if discoverer == nil {
-			continue
-		}
+		discoverWG.Go(func() {
+			err := discoverer.DiscoverMany(ctx, roots, writer)
+			writer.CloseWithError(err)
+		})
 
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 30*time.Second,
-		)
-		names, err := discoverer.Discover(ctx, domain)
-		cancel()
+		scanner := bufio.NewScanner(reader)
 
-		if err != nil {
-			log.Printf("discover %s: %v", domain, err)
-		}
+		for scanner.Scan() {
+			name := strings.ToLower(strings.TrimSpace(scanner.Text()))
+			name = strings.TrimSuffix(name, ".")
 
-		for _, name := range names {
+			if name == "" || strings.Contains(name, "*") {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+
+			seen[name] = struct{}{}
 			hosts <- name
 		}
-	}
 
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		cancel()
+		reader.Close()
+		discoverWG.Wait()
+
+		if err := scanner.Err(); err != nil {
+			log.Printf("subdomain discovery: %v", err)
+		}
 	}
 
 	close(hosts)

@@ -59,3 +59,16 @@ func (d *SubdomainDiscoverer) Discover(
 	// Preserve any partial results alongside an error.
 	return names, err
 }
+
+func (d *SubdomainDiscoverer) DiscoverMany(
+	ctx context.Context,
+	roots []string,
+	output io.Writer,
+) error {
+	input := strings.NewReader(strings.Join(roots, "\n"))
+	return d.runner.EnumerateMultipleDomainsWithCtx(
+		ctx,
+		input,
+		[]io.Writer{output},
+	)
+}
