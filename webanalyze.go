@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -79,12 +80,14 @@ type Match struct {
 
 // WebAnalyzer types holds an analyzation job
 type WebAnalyzer struct {
-	appDefs   AppsDefinition
-	catDefs   CategoriesDefinition
-	groupDefs GroupsDefinition
-	client    *http.Client
-	browser   *Browser
-	appsIndex AppsIndex
+	appDefs       AppsDefinition
+	catDefs       CategoriesDefinition
+	groupDefs     GroupsDefinition
+	client        *http.Client
+	browser       *Browser
+	appsIndex     AppsIndex
+	seenFinalURLs map[string]struct{}
+	seenMutex     sync.Mutex
 
 	jsPaths       []string
 	domSelectors  []string
@@ -143,6 +146,8 @@ func (m *Match) addDetection(
 	m.updateVersion(version, confidence)
 }
 
+var errDuplicateFinalURL = errors.New("duplicate final URL")
+
 // NewWebAnalyzer initializes webanalyzer by passing a reader of the
 // app definition and an schedulerChan, which allows the scanner to
 // add scan jobs on its own
@@ -163,6 +168,7 @@ func NewWebAnalyzer(apps io.Reader, categories io.Reader, groups io.Reader, clie
 	}
 
 	wa.client = client
+	wa.seenFinalURLs = make(map[string]struct{})
 
 	return wa, nil
 }
@@ -439,6 +445,10 @@ func (wa *WebAnalyzer) crawlBFS(job *Job) []Result {
 		)
 
 		result, links := wa.Process(pageJob)
+
+		if errors.Is(result.Error, errDuplicateFinalURL) {
+			continue
+		}
 
 		results = append(results, result)
 
@@ -1004,18 +1014,29 @@ func (wa *WebAnalyzer) process(job *Job, appDefs AppsDefinition) ([]Match, []str
 		cookies = job.Cookies
 	} else {
 		resp, err := fetchHost(job.URL, wa.client, job.followRedirect)
+
 		if err != nil {
 			return nil, links, "", fmt.Errorf("Failed to retrieve: %w", err)
 		}
 
+		defer resp.Body.Close()
+
 		finalURL = resp.Request.URL.String()
 		baseURL = resp.Request.URL
+
+		wa.seenMutex.Lock()
+
+		if _, seen := wa.seenFinalURLs[finalURL]; seen {
+			wa.seenMutex.Unlock()
+			return nil, links, finalURL, errDuplicateFinalURL
+		}
+
+		wa.seenFinalURLs[finalURL] = struct{}{}
+		wa.seenMutex.Unlock()
 
 		if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 			certIssuer = resp.TLS.PeerCertificates[0].Issuer.String()
 		}
-
-		defer resp.Body.Close()
 
 		body, err = io.ReadAll(resp.Body)
 		if err != nil {
